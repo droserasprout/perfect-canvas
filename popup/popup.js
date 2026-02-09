@@ -5,13 +5,74 @@ const btnStart = $("btn-start");
 const btnStop = $("btn-stop");
 const statusEl = $("status");
 
+const STORAGE_KEY = "canvasCaptureSettings";
+
+// All persisted field IDs
+const PERSISTED_FIELDS = [
+  "size-preset",
+  "width",
+  "height",
+  "upscale",
+  "fps",
+  "duration",
+  "crf",
+  "codec",
+  "output",
+];
+
 let port = null;
 
-const sizePreset = document.getElementById("size-preset");
-const widthInput = document.getElementById("width");
-const heightInput = document.getElementById("height");
+const sizePreset = $("size-preset");
+const widthInput = $("width");
+const heightInput = $("height");
 
-sizePreset.addEventListener("change", () => {
+// ─────────────────────────────────────────────────────────────
+// Persistence
+// ─────────────────────────────────────────────────────────────
+
+function saveSettings() {
+  const settings = {};
+  for (const id of PERSISTED_FIELDS) {
+    const el = $(id);
+    if (el) {
+      settings[id] = el.value;
+    }
+  }
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+}
+
+function loadSettings() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+
+    const settings = JSON.parse(raw);
+    for (const id of PERSISTED_FIELDS) {
+      const el = $(id);
+      if (el && settings[id] !== undefined) {
+        el.value = settings[id];
+      }
+    }
+  } catch (e) {
+    console.warn("[CC popup] Failed to load settings:", e);
+  }
+}
+
+function attachPersistenceListeners() {
+  for (const id of PERSISTED_FIELDS) {
+    const el = $(id);
+    if (el) {
+      el.addEventListener("change", saveSettings);
+      el.addEventListener("input", saveSettings);
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Size preset handling
+// ─────────────────────────────────────────────────────────────
+
+function handleSizePresetChange() {
   const val = sizePreset.value;
 
   if (val === "custom") {
@@ -30,10 +91,14 @@ sizePreset.addEventListener("change", () => {
       heightInput.value = h;
     }
   }
-});
+  saveSettings();
+}
 
-// Trigger once on load to set initial state
-sizePreset.dispatchEvent(new Event("change"));
+sizePreset.addEventListener("change", handleSizePresetChange);
+
+// ─────────────────────────────────────────────────────────────
+// Port communication
+// ─────────────────────────────────────────────────────────────
 
 function connectPort() {
   port = browser.runtime.connect({ name: "popup" });
@@ -57,6 +122,10 @@ function connectPort() {
   });
 }
 
+// ─────────────────────────────────────────────────────────────
+// Config & UI
+// ─────────────────────────────────────────────────────────────
+
 function getConfig() {
   let output = $("output").value;
   const codec = $("codec").value;
@@ -69,41 +138,19 @@ function getConfig() {
   const ext = extMap[codec] || ".mp4";
   output = output.replace(/\.\w+$/, "") + ext;
 
-  const upscale = document.getElementById("upscale").value;
-  const sizePreset = document.getElementById("size-preset").value;
+  const upscaleVal = $("upscale").value;
 
   return {
     width: parseInt(widthInput.value) || 0,
     height: parseInt(heightInput.value) || 0,
-    fps: parseInt(document.getElementById("fps").value),
-    duration: parseInt(document.getElementById("duration").value),
-    codec: document.getElementById("codec").value,
-    crf: parseInt(document.getElementById("crf").value),
-    output: document.getElementById("output").value,
-    upscale: document.getElementById("upscale").value !== "none"
-      ? document.getElementById("upscale").value
-      : null,
+    fps: parseInt($("fps").value),
+    duration: parseInt($("duration").value),
+    codec: codec,
+    crf: parseInt($("crf").value),
+    output: output,
+    upscale: upscaleVal !== "none" ? upscaleVal : null,
   };
 }
-
-btnStart.addEventListener("click", () => {
-  const config = getConfig();
-  console.log("[CC popup] Start clicked, config:", config);
-  statusEl.textContent = "⏳ Sending start...";
-
-  try {
-    port.postMessage({ action: "start", config });
-    console.log("[CC popup] Message sent");
-  } catch (e) {
-    console.error("[CC popup] Send failed:", e);
-    statusEl.textContent = `❌ Send failed: ${e.message}`;
-  }
-});
-
-btnStop.addEventListener("click", () => {
-  console.log("[CC popup] Stop clicked");
-  port.postMessage({ action: "stop" });
-});
 
 function updateUI(s) {
   console.log("[CC popup] State update:", s.status);
@@ -137,4 +184,38 @@ function updateUI(s) {
   }
 }
 
-connectPort();
+// ─────────────────────────────────────────────────────────────
+// Event listeners
+// ─────────────────────────────────────────────────────────────
+
+btnStart.addEventListener("click", () => {
+  const config = getConfig();
+  console.log("[CC popup] Start clicked, config:", config);
+  statusEl.textContent = "⏳ Sending start...";
+
+  try {
+    port.postMessage({ action: "start", config });
+    console.log("[CC popup] Message sent");
+  } catch (e) {
+    console.error("[CC popup] Send failed:", e);
+    statusEl.textContent = `❌ Send failed: ${e.message}`;
+  }
+});
+
+btnStop.addEventListener("click", () => {
+  console.log("[CC popup] Stop clicked");
+  port.postMessage({ action: "stop" });
+});
+
+// ─────────────────────────────────────────────────────────────
+// Initialization
+// ─────────────────────────────────────────────────────────────
+
+function init() {
+  loadSettings();
+  attachPersistenceListeners();
+  handleSizePresetChange(); // Apply loaded preset
+  connectPort();
+}
+
+init();

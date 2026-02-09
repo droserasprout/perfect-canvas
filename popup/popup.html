@@ -43,7 +43,7 @@
     color: #a0a0b0;
   }
   input, select {
-    width: 140px;
+    width: 160px;
     padding: 5px 8px;
     background: #16213e;
     color: #e0e0e0;
@@ -80,8 +80,13 @@
     gap: 4px;
     margin: 0;
   }
-  .compact-row input {
+  .compact-row input, .compact-row select {
     width: 100%;
+  }
+  optgroup {
+    font-style: normal;
+    font-weight: 600;
+    color: #8892b0;
   }
   button {
     width: 100%;
@@ -127,9 +132,23 @@
       <span>Size Preset</span>
       <select id="size-preset">
         <option value="native">Native (match canvas)</option>
-        <option value="1920x1080">1920 × 1080</option>
-        <option value="1080x1920">1080 × 1920</option>
-        <option value="custom">Custom</option>
+        <optgroup label="Landscape (16:9)">
+          <option value="1280x720">1280 × 720 (720p)</option>
+          <option value="1920x1080">1920 × 1080 (1080p)</option>
+          <option value="2560x1440">2560 × 1440 (1440p)</option>
+          <option value="3840x2160">3840 × 2160 (4K)</option>
+        </optgroup>
+        <optgroup label="Portrait (9:16)">
+          <option value="720x1280">720 × 1280</option>
+          <option value="1080x1920">1080 × 1920</option>
+          <option value="1440x2560">1440 × 2560</option>
+          <option value="2160x3840">2160 × 3840 (4K)</option>
+        </optgroup>
+        <optgroup label="Square">
+          <option value="1080x1080">1080 × 1080</option>
+          <option value="1440x1440">1440 × 1440</option>
+        </optgroup>
+        <option value="custom">Custom...</option>
       </select>
     </label>
     <div class="row">
@@ -140,10 +159,22 @@
       <span>Upscale to</span>
       <select id="upscale">
         <option value="none">None</option>
-        <option value="1920x1080">1920 × 1080</option>
-        <option value="1080x1920">1080 × 1920</option>
-        <option value="3840x2160">4K Landscape</option>
-        <option value="2160x3840">4K Portrait</option>
+        <optgroup label="Landscape (16:9)">
+          <option value="1280x720">1280 × 720 (720p)</option>
+          <option value="1920x1080">1920 × 1080 (1080p)</option>
+          <option value="2560x1440">2560 × 1440 (1440p)</option>
+          <option value="3840x2160">3840 × 2160 (4K)</option>
+        </optgroup>
+        <optgroup label="Portrait (9:16)">
+          <option value="720x1280">720 × 1280</option>
+          <option value="1080x1920">1080 × 1920</option>
+          <option value="1440x2560">1440 × 2560</option>
+          <option value="2160x3840">2160 × 3840 (4K)</option>
+        </optgroup>
+        <optgroup label="Square">
+          <option value="1080x1080">1080 × 1080</option>
+          <option value="1440x1440">1440 × 1440</option>
+        </optgroup>
       </select>
     </label>
   </fieldset>
