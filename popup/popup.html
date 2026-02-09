@@ -5,49 +5,114 @@
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
-    width: 600px;
-    font: 13px/1.6 monospace;
+    width: 420px;
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
     background: #1a1a2e;
     color: #e0e0e0;
-    padding: 12px;
+    padding: 16px;
   }
-  h1 { font-size: 14px; margin-bottom: 8px; }
-  label { display: flex; justify-content: space-between; align-items: center; margin: 4px 0; }
+  h1 {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #0f3460;
+  }
+  fieldset {
+    border: 1px solid #0f3460;
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 12px;
+  }
+  legend {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #8892b0;
+    padding: 0 6px;
+  }
+  label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin: 6px 0;
+    font-size: 12px;
+  }
+  label span {
+    color: #a0a0b0;
+  }
   input, select {
-    width: 130px;
-    padding: 3px 6px;
+    width: 140px;
+    padding: 5px 8px;
     background: #16213e;
     color: #e0e0e0;
     border: 1px solid #0f3460;
-    border-radius: 3px;
+    border-radius: 4px;
     font: inherit;
+    font-size: 12px;
   }
-  .row { display: flex; gap: 8px; margin: 4px 0; }
-  .row label { flex: 1; }
-  .row input { width: 100%; }
+  input:focus, select:focus {
+    outline: none;
+    border-color: #e94560;
+  }
+  .row {
+    display: flex;
+    gap: 10px;
+    margin: 6px 0;
+  }
+  .row label {
+    flex: 1;
+    margin: 0;
+  }
+  .row input, .row select {
+    width: 100%;
+  }
+  .compact-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1fr;
+    gap: 8px;
+    margin: 6px 0;
+  }
+  .compact-row label {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    margin: 0;
+  }
+  .compact-row input {
+    width: 100%;
+  }
   button {
     width: 100%;
-    padding: 8px;
-    margin-top: 10px;
+    padding: 10px;
+    margin-top: 4px;
     font: inherit;
-    font-weight: bold;
+    font-size: 13px;
+    font-weight: 600;
     border: none;
-    border-radius: 4px;
+    border-radius: 6px;
     cursor: pointer;
+    transition: opacity 0.15s;
+  }
+  button:hover:not(:disabled) {
+    opacity: 0.9;
   }
   #btn-start { background: #e94560; color: #fff; }
-  #btn-start:disabled { background: #444; color: #888; cursor: default; }
+  #btn-start:disabled { background: #333; color: #666; cursor: default; }
   #btn-stop { background: #533483; color: #fff; display: none; }
   #status {
-    margin-top: 8px;
-    padding: 6px;
+    margin-top: 12px;
+    padding: 8px 10px;
     background: #16213e;
-    border-radius: 3px;
+    border-radius: 4px;
     font-size: 11px;
+    font-family: monospace;
     min-height: 2.4em;
     white-space: pre-wrap;
+    color: #8892b0;
   }
-  input:disabled {
+  input:disabled, select:disabled {
     opacity: 0.4;
     cursor: not-allowed;
   }
@@ -56,48 +121,61 @@
 <body>
   <h1>🎬 Canvas Capture</h1>
 
-  <div class="row">
-    <label>Size
+  <fieldset>
+    <legend>Dimensions</legend>
+    <label>
+      <span>Size Preset</span>
       <select id="size-preset">
         <option value="native">Native (match canvas)</option>
-        <option value="1920x1080">1920×1080</option>
-        <option value="1080x1920">1080×1920</option>
+        <option value="1920x1080">1920 × 1080</option>
+        <option value="1080x1920">1080 × 1920</option>
         <option value="custom">Custom</option>
       </select>
     </label>
-    <label>Upscale to
+    <div class="row">
+      <label><span>Width</span> <input id="width" type="number" value="" disabled></label>
+      <label><span>Height</span> <input id="height" type="number" value="" disabled></label>
+    </div>
+    <label>
+      <span>Upscale to</span>
       <select id="upscale">
         <option value="none">None</option>
-        <option value="1920x1080">1920×1080</option>
-        <option value="1080x1920">1080×1920</option>
+        <option value="1920x1080">1920 × 1080</option>
+        <option value="1080x1920">1080 × 1920</option>
         <option value="3840x2160">4K Landscape</option>
         <option value="2160x3840">4K Portrait</option>
       </select>
     </label>
-  </div>
+  </fieldset>
 
-  <div class="row">
-    <label>W <input id="width" type="number" value="" disabled></label>
-    <label>H <input id="height" type="number" value="" disabled></label>
-  </div>
+  <fieldset>
+    <legend>Recording</legend>
+    <div class="compact-row">
+      <label><span>FPS</span> <input id="fps" type="number" value="60"></label>
+      <label><span>Duration (s)</span> <input id="duration" type="number" value="10" title="0 = manual stop"></label>
+      <label><span>CRF</span> <input id="crf" type="number" value="18" min="0" max="51"></label>
+      <label>
+        <span>Codec</span>
+        <select id="codec">
+          <option value="libx264">H.264</option>
+          <option value="prores">ProRes</option>
+          <option value="ffv1">FFV1</option>
+          <option value="libvpx-vp9">VP9</option>
+        </select>
+      </label>
+    </div>
+  </fieldset>
 
-  <div class="row">
-    <label>FPS <input id="fps" type="number" value="60"></label>
-    <label>Dur (s) <input id="duration" type="number" value="10" title="0 = manual stop"></label>
-  </div>
-  <label>Codec
-    <select id="codec">
-      <option value="libx264">H.264 (MP4)</option>
-      <option value="prores">ProRes (MOV)</option>
-      <option value="ffv1">FFV1 lossless (MKV)</option>
-      <option value="libvpx-vp9">VP9 (WebM)</option>
-    </select>
-  </label>
-  <label>CRF <input id="crf" type="number" value="18" min="0" max="51"></label>
-  <label>Output <input id="output" type="text" value="~/Videos/capture.mp4"></label>
+  <fieldset>
+    <legend>Output</legend>
+    <label>
+      <span>File Path</span>
+      <input id="output" type="text" value="~/Videos/capture.mp4" style="width: 220px;">
+    </label>
+  </fieldset>
 
   <button id="btn-start">▶ Start Capture</button>
-  <button id="btn-stop">⬛ Stop</button>
+  <button id="btn-stop">⬛ Stop Capture</button>
   <div id="status">Ready</div>
 
   <script src="popup.js"></script>
