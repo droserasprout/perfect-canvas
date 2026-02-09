@@ -1,0 +1,39 @@
+{
+  "manifest_version": 2,
+  "name": "Canvas Capture",
+  "version": "0.1.0",
+  "description": "Frame-perfect canvas capture to FFmpeg",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "canvas-capture@localhost"
+    }
+  },
+  "permissions": [
+    "nativeMessaging",
+    "activeTab",
+    "tabs"
+  ],
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "browser_action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "Canvas Capture"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://hydra.ojack.xyz/*",
+        "https://cables.gl/*",
+        "https://sandbox.cables.gl/*",
+        "https://editor.p5js.org/*",
+        "https://www.shadertoy.com/*",
+        "*://localhost/*"
+      ],
+      "js": ["content.js"],
+      "all_frames": true,
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": ["inject.js"]
+}

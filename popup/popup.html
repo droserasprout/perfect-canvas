@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    width: 300px;
+    font: 13px/1.6 monospace;
+    background: #1a1a2e;
+    color: #e0e0e0;
+    padding: 12px;
+  }
+  h1 { font-size: 14px; margin-bottom: 8px; }
+  label { display: flex; justify-content: space-between; align-items: center; margin: 4px 0; }
+  input, select {
+    width: 130px;
+    padding: 3px 6px;
+    background: #16213e;
+    color: #e0e0e0;
+    border: 1px solid #0f3460;
+    border-radius: 3px;
+    font: inherit;
+  }
+  .row { display: flex; gap: 8px; margin: 4px 0; }
+  .row label { flex: 1; }
+  .row input { width: 100%; }
+  button {
+    width: 100%;
+    padding: 8px;
+    margin-top: 10px;
+    font: inherit;
+    font-weight: bold;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  #btn-start { background: #e94560; color: #fff; }
+  #btn-start:disabled { background: #444; color: #888; cursor: default; }
+  #btn-stop { background: #533483; color: #fff; display: none; }
+  #status {
+    margin-top: 8px;
+    padding: 6px;
+    background: #16213e;
+    border-radius: 3px;
+    font-size: 11px;
+    min-height: 2.4em;
+    white-space: pre-wrap;
+  }
+</style>
+</head>
+<body>
+  <h1>🎬 Canvas Capture</h1>
+
+  <div class="row">
+    <label>W <input id="width" type="number" value="1080"></label>
+    <label>H <input id="height" type="number" value="1920"></label>
+  </div>
+  <div class="row">
+    <label>FPS <input id="fps" type="number" value="60"></label>
+    <label>Dur (s) <input id="duration" type="number" value="10" title="0 = manual stop"></label>
+  </div>
+  <label>Codec
+    <select id="codec">
+      <option value="libx264">H.264 (MP4)</option>
+      <option value="prores">ProRes (MOV)</option>
+      <option value="ffv1">FFV1 lossless (MKV)</option>
+      <option value="libvpx-vp9">VP9 (WebM)</option>
+    </select>
+  </label>
+  <label>CRF <input id="crf" type="number" value="18" min="0" max="51"></label>
+  <label>Output <input id="output" type="text" value="~/Videos/capture.mp4"></label>
+
+  <button id="btn-start">▶ Start Capture</button>
+  <button id="btn-stop">⬛ Stop</button>
+  <div id="status">Ready</div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
