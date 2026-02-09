@@ -5,7 +5,7 @@
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
-    width: 300px;
+    width: 600px;
     font: 13px/1.6 monospace;
     background: #1a1a2e;
     color: #e0e0e0;
@@ -47,6 +47,10 @@
     min-height: 2.4em;
     white-space: pre-wrap;
   }
+  input:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
 </style>
 </head>
 <body>
@@ -54,25 +58,29 @@
 
   <div class="row">
     <label>Size
-    <select id="size-preset">
+      <select id="size-preset">
         <option value="native">Native (match canvas)</option>
-        <option value="1080x1920">1080×1920</option>
         <option value="1920x1080">1920×1080</option>
+        <option value="1080x1920">1080×1920</option>
         <option value="custom">Custom</option>
-    </select>
+      </select>
     </label>
     <label>Upscale to
-    <select id="upscale">
+      <select id="upscale">
         <option value="none">None</option>
-        <option value="1080x1920">1080×1920</option>
         <option value="1920x1080">1920×1080</option>
-        <option value="2160x3840">4K Portrait</option>
+        <option value="1080x1920">1080×1920</option>
         <option value="3840x2160">4K Landscape</option>
-    </select>
+        <option value="2160x3840">4K Portrait</option>
+      </select>
     </label>
-    <!-- <label>W <input id="width" type="number" value="1080"></label>
-    <label>H <input id="height" type="number" value="1920"></label> -->
   </div>
+
+  <div class="row">
+    <label>W <input id="width" type="number" value="" disabled></label>
+    <label>H <input id="height" type="number" value="" disabled></label>
+  </div>
+
   <div class="row">
     <label>FPS <input id="fps" type="number" value="60"></label>
     <label>Dur (s) <input id="duration" type="number" value="10" title="0 = manual stop"></label>

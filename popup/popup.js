@@ -7,6 +7,34 @@ const statusEl = $("status");
 
 let port = null;
 
+const sizePreset = document.getElementById("size-preset");
+const widthInput = document.getElementById("width");
+const heightInput = document.getElementById("height");
+
+sizePreset.addEventListener("change", () => {
+  const val = sizePreset.value;
+
+  if (val === "custom") {
+    widthInput.disabled = false;
+    heightInput.disabled = false;
+  } else {
+    widthInput.disabled = true;
+    heightInput.disabled = true;
+
+    if (val === "native") {
+      widthInput.value = "";
+      heightInput.value = "";
+    } else {
+      const [w, h] = val.split("x");
+      widthInput.value = w;
+      heightInput.value = h;
+    }
+  }
+});
+
+// Trigger once on load to set initial state
+sizePreset.dispatchEvent(new Event("change"));
+
 function connectPort() {
   port = browser.runtime.connect({ name: "popup" });
   console.log("[CC popup] Port connected");
@@ -45,14 +73,16 @@ function getConfig() {
   const sizePreset = document.getElementById("size-preset").value;
 
   return {
-    width: sizePreset === "native" ? 0 : parseInt(document.getElementById("width").value),
-    height: sizePreset === "native" ? 0 : parseInt(document.getElementById("height").value),
+    width: parseInt(widthInput.value) || 0,
+    height: parseInt(heightInput.value) || 0,
     fps: parseInt(document.getElementById("fps").value),
     duration: parseInt(document.getElementById("duration").value),
     codec: document.getElementById("codec").value,
     crf: parseInt(document.getElementById("crf").value),
     output: document.getElementById("output").value,
-    upscale: upscale !== "none" ? upscale : null,
+    upscale: document.getElementById("upscale").value !== "none"
+      ? document.getElementById("upscale").value
+      : null,
   };
 }
 
