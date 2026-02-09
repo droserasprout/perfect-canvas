@@ -41,14 +41,18 @@ function getConfig() {
   const ext = extMap[codec] || ".mp4";
   output = output.replace(/\.\w+$/, "") + ext;
 
+  const upscale = document.getElementById("upscale").value;
+  const sizePreset = document.getElementById("size-preset").value;
+
   return {
-    width: parseInt($("width").value),
-    height: parseInt($("height").value),
-    fps: parseInt($("fps").value),
-    duration: parseFloat($("duration").value),
-    codec,
-    crf: parseInt($("crf").value),
-    output,
+    width: sizePreset === "native" ? 0 : parseInt(document.getElementById("width").value),
+    height: sizePreset === "native" ? 0 : parseInt(document.getElementById("height").value),
+    fps: parseInt(document.getElementById("fps").value),
+    duration: parseInt(document.getElementById("duration").value),
+    codec: document.getElementById("codec").value,
+    crf: parseInt(document.getElementById("crf").value),
+    output: document.getElementById("output").value,
+    upscale: upscale !== "none" ? upscale : null,
   };
 }
 

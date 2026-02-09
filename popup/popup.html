@@ -53,8 +53,25 @@
   <h1>🎬 Canvas Capture</h1>
 
   <div class="row">
-    <label>W <input id="width" type="number" value="1080"></label>
-    <label>H <input id="height" type="number" value="1920"></label>
+    <label>Size
+    <select id="size-preset">
+        <option value="native">Native (match canvas)</option>
+        <option value="1080x1920">1080×1920</option>
+        <option value="1920x1080">1920×1080</option>
+        <option value="custom">Custom</option>
+    </select>
+    </label>
+    <label>Upscale to
+    <select id="upscale">
+        <option value="none">None</option>
+        <option value="1080x1920">1080×1920</option>
+        <option value="1920x1080">1920×1080</option>
+        <option value="2160x3840">4K Portrait</option>
+        <option value="3840x2160">4K Landscape</option>
+    </select>
+    </label>
+    <!-- <label>W <input id="width" type="number" value="1080"></label>
+    <label>H <input id="height" type="number" value="1920"></label> -->
   </div>
   <div class="row">
     <label>FPS <input id="fps" type="number" value="60"></label>

@@ -66,8 +66,7 @@ def find_ffmpeg():
             return p
     return None
 
-
-def build_ffmpeg_cmd(ffmpeg_bin, width, height, fps, codec, crf, output, vflip):
+def build_ffmpeg_cmd(ffmpeg_bin, width, height, fps, codec, crf, output, vflip, upscale=None):
     cmd = [
         ffmpeg_bin, "-y", "-loglevel", "warning",
         "-f", "rawvideo", "-pixel_format", "rgba",
@@ -78,6 +77,9 @@ def build_ffmpeg_cmd(ffmpeg_bin, width, height, fps, codec, crf, output, vflip):
     vf = []
     if vflip:
         vf.append("vflip")
+    if upscale:
+        uw, uh = upscale.split("x")
+        vf.append(f"scale={uw}:{uh}:flags=lanczos")
 
     if codec == "libx264":
         cmd += ["-c:v", "libx264", "-crf", str(crf), "-preset", "medium",
@@ -127,6 +129,7 @@ async def handle_ws(websocket, config, done_event):
                         config.get("crf", 18),
                         output,
                         vflip=msg.get("webgl", False),
+                        upscale=config.get("upscale"),
                     )
                     log.info("FFmpeg cmd: %s", " ".join(cmd))
                     ffmpeg_proc = await asyncio.create_subprocess_exec(
