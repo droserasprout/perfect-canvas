@@ -14,6 +14,16 @@
   let frameDuration = 0;
   let ackResolve = null;
 
+  let originalCanvas = {
+    width: 0,
+    height: 0,
+    styleWidth: "",
+    styleHeight: "",
+    styleObjectFit: "",
+  };
+  let targetCanvas = null;
+
+
   const origRAF = window.requestAnimationFrame.bind(window);
   const origCAF = window.cancelAnimationFrame.bind(window);
   const origDateNow = Date.now;
@@ -50,10 +60,6 @@
   }
 
   function resizeApp(canvas, width, height) {
-    canvas.width = width;
-    canvas.height = height;
-    canvas.style.objectFit = "contain";
-
     // Hydra
     try {
       if (typeof window.setResolution === "function") {
@@ -62,15 +68,44 @@
       }
     } catch (e) { console.warn("[CC] setResolution error:", e); }
 
-    // Cables
+    // Cables — must lock BEFORE setting size
     try {
       if (window.CABLES && CABLES.patch && CABLES.patch.cgl) {
-        console.log("[CC] Cables detected → cgl.setSize()");
-        CABLES.patch.cgl.setSize(width, height);
-      }
-    } catch (e) { console.warn("[CC] Cables setSize error:", e); }
+        const cgl = CABLES.patch.cgl;
+        console.log("[CC] Cables detected → locking size");
 
-    // Generic
+        // Save the real setSize
+        originalCanvas._cablesSetSize = cgl.setSize.bind(cgl);
+
+        // Set target resolution via the real method
+        cgl.setSize(width, height);
+
+        // Now block all future resize attempts during capture
+        cgl.setSize = function (w, h) {
+          // no-op — prevent Cables from resetting
+        };
+
+        // Also lock canvas.width/height directly
+        Object.defineProperty(canvas, "width", {
+          get: () => width,
+          set: () => {},
+          configurable: true,
+        });
+        Object.defineProperty(canvas, "height", {
+          get: () => height,
+          set: () => {},
+          configurable: true,
+        });
+
+        console.log(`[CC] Cables locked at ${width}×${height}`);
+        return; // skip the generic resize below
+      }
+    } catch (e) { console.warn("[CC] Cables lock error:", e); }
+
+    // Generic (non-Cables)
+    canvas.width = width;
+    canvas.height = height;
+    canvas.style.objectFit = "contain";
     window.dispatchEvent(new Event("resize"));
   }
 
@@ -175,6 +210,17 @@
       return;
     }
 
+    // Save original state
+    targetCanvas = canvas;
+    originalCanvas = {
+      width: canvas.width,
+      height: canvas.height,
+      styleWidth: canvas.style.width,
+      styleHeight: canvas.style.height,
+      styleObjectFit: canvas.style.objectFit,
+    };
+    console.log(`[CC] Saved original: ${originalCanvas.width}×${originalCanvas.height}`);
+
     const width = config.width || 1080;
     const height = config.height || 1920;
     const fps = config.fps || 60;
@@ -198,7 +244,7 @@
     captureLoop(canvas, width, height);
   }
 
-  function stopCapture() {
+function stopCapture() {
     if (!capturing) return;
     capturing = false;
 
@@ -206,6 +252,43 @@
     window.cancelAnimationFrame = origCAF;
     Date.now = origDateNow;
     performance.now = origPerfNow;
+
+    // Restore canvas
+    if (targetCanvas && originalCanvas.width) {
+      console.log(`[CC] Restoring canvas to ${originalCanvas.width}×${originalCanvas.height}`);
+
+      // Cables — unlock first
+      if (originalCanvas._cablesSetSize) {
+        // Remove our locked property overrides
+        delete targetCanvas.width;
+        delete targetCanvas.height;
+
+        // Restore real setSize
+        try {
+          CABLES.patch.cgl.setSize = originalCanvas._cablesSetSize;
+          CABLES.patch.cgl.setSize(originalCanvas.width, originalCanvas.height);
+        } catch (e) { console.warn("[CC] Cables restore error:", e); }
+
+        originalCanvas._cablesSetSize = null;
+      } else {
+        // Generic / Hydra
+        targetCanvas.width = originalCanvas.width;
+        targetCanvas.height = originalCanvas.height;
+
+        try {
+          if (typeof window.setResolution === "function") {
+            window.setResolution(originalCanvas.width, originalCanvas.height);
+          }
+        } catch (_) {}
+      }
+
+      targetCanvas.style.width = originalCanvas.styleWidth;
+      targetCanvas.style.height = originalCanvas.styleHeight;
+      targetCanvas.style.objectFit = originalCanvas.styleObjectFit;
+
+      window.dispatchEvent(new Event("resize"));
+      targetCanvas = null;
+    }
 
     window.postMessage({ type: "__cc_done", frames: frameCount }, "*");
     console.log(`[CC] Capture stopped at frame ${frameCount}`);
