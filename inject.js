@@ -171,18 +171,20 @@
     if (!gl) try { gl = canvas.getContext("webgl"); } catch (_) {}
 
     if (gl) {
-      // Cables renders to its own FBO — we must read from the main framebuffer
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
-      // Use actual drawing buffer size, not the requested size
-      const actualW = gl.drawingBufferWidth;
-      const actualH = gl.drawingBufferHeight;
+      const dbW = gl.drawingBufferWidth;
+      const dbH = gl.drawingBufferHeight;
 
-      console.log(`[CC] readPixels: requested ${width}×${height}, actual drawingBuffer ${actualW}×${actualH}`);
+      // Clamp to drawing buffer but use requested (even) size
+      const readW = Math.min(width, dbW);
+      const readH = Math.min(height, dbH);
 
-      const buf = new Uint8Array(actualW * actualH * 4);
-      gl.readPixels(0, 0, actualW, actualH, gl.RGBA, gl.UNSIGNED_BYTE, buf);
-      return { data: buf, webgl: true, actualWidth: actualW, actualHeight: actualH };
+      console.log(`[CC] readPixels: target ${width}×${height}, drawingBuffer ${dbW}×${dbH}, reading ${readW}×${readH}`);
+
+      const buf = new Uint8Array(readW * readH * 4);
+      gl.readPixels(0, 0, readW, readH, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+      return { data: buf, webgl: true, actualWidth: readW, actualHeight: readH };
     }
 
     const ctx = canvas.getContext("2d");
@@ -213,15 +215,24 @@
     console.log("[CC] Waiting for app to settle after resize...");
     await new Promise((r) => setTimeout(r, 500));
 
-    console.log("[CC] Reading first frame...");
-    const firstRead = readPixels(canvas, width, height);
+    // Determine actual drawing buffer size and make it even
+    let gl = null;
+    try { gl = canvas.getContext("webgl2"); } catch (_) {}
+    if (!gl) try { gl = canvas.getContext("webgl"); } catch (_) {}
 
-    // After getting actual dimensions, enforce even values
-    let encW = firstRead.actualWidth;
-    let encH = firstRead.actualHeight;
-    encW = encW % 2 === 0 ? encW : encW - 1;
-    encH = encH % 2 === 0 ? encH : encH - 1;
+    let encW = width;
+    let encH = height;
+    if (gl) {
+      encW = gl.drawingBufferWidth;
+      encH = gl.drawingBufferHeight;
+    }
+    // Force even dimensions
+    encW = encW - (encW % 2);
+    encH = encH - (encH % 2);
     console.log(`[CC] Encoding at: ${encW}×${encH} (even-aligned)`);
+
+    console.log("[CC] Reading first frame...");
+    const firstRead = readPixels(canvas, encW, encH);
 
     window.postMessage({
       type: "__cc_meta",
@@ -261,7 +272,7 @@
       if (frameCount % 30 === 0) await new Promise((r) => setTimeout(r, 0));
     }
 
-    await stopCapture();
+    stopCapture();
   }
 
   function reportProgress() {
