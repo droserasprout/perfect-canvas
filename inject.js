@@ -85,6 +85,7 @@ function resizeApp(canvas, width, height) {
         cgl.setSize(width, height);
 
         console.log(`[CC] Cables locked at ${width}×${height}`);
+        window.dispatchEvent(new Event("resize"));
         return;
       }
     } catch (e) { console.warn("[CC] Cables lock error:", e); }
@@ -239,6 +240,12 @@ function stopCapture() {
     window.cancelAnimationFrame = origCAF;
     Date.now = origDateNow;
     performance.now = origPerfNow;
+
+    // Re-queue orphaned callbacks so the app's render loop resumes
+    const pending = frameCallbacks.splice(0);
+    for (const { cb } of pending) {
+        origRAF(cb);
+    }
 
     if (targetCanvas && originalCanvas.width) {
       if (originalCanvas._cablesSetSize) {
