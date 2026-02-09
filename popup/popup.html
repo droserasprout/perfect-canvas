@@ -121,6 +121,50 @@
     opacity: 0.4;
     cursor: not-allowed;
   }
+  .quality-slider {
+    width: 180px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .quality-slider input[type="range"] {
+    width: 100%;
+    height: 6px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: #0f3460;
+    border-radius: 3px;
+    border: none;
+    padding: 0;
+  }
+  .quality-slider input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    background: #e94560;
+    border-radius: 50%;
+    cursor: pointer;
+  }
+  .quality-slider input[type="range"]::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    background: #e94560;
+    border-radius: 50%;
+    cursor: pointer;
+    border: none;
+  }
+  .quality-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 9px;
+    color: #6a7085;
+    padding: 0 2px;
+  }
+  .quality-labels span {
+    text-align: center;
+    flex: 1;
+  }
+
 </style>
 </head>
 <body>
@@ -181,20 +225,23 @@
 
   <fieldset>
     <legend>Recording</legend>
-    <div class="compact-row">
+    <div class="row">
       <label><span>FPS</span> <input id="fps" type="number" value="60"></label>
       <label><span>Duration (s)</span> <input id="duration" type="number" value="10" title="0 = manual stop"></label>
-      <label><span>CRF</span> <input id="crf" type="number" value="18" min="0" max="51"></label>
-      <label>
-        <span>Codec</span>
-        <select id="codec">
-          <option value="libx264">H.264</option>
-          <option value="prores">ProRes</option>
-          <option value="ffv1">FFV1</option>
-          <option value="libvpx-vp9">VP9</option>
-        </select>
-      </label>
     </div>
+    <label>
+      <span>Quality</span>
+      <div class="quality-slider">
+        <input type="range" id="quality" min="0" max="4" value="2">
+        <div class="quality-labels">
+          <span>Draft</span>
+          <span>Good</span>
+          <span>High</span>
+          <span>Ultra</span>
+          <span>Lossless</span>
+        </div>
+      </div>
+    </label>
   </fieldset>
 
   <fieldset>

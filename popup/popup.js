@@ -15,10 +15,18 @@ const PERSISTED_FIELDS = [
   "upscale",
   "fps",
   "duration",
-  "crf",
-  "codec",
+  "quality",
   "output",
 ];
+
+// Quality to CRF mapping (H.264)
+const QUALITY_TO_CRF = {
+  0: 28,  // Draft - small files, visible compression
+  1: 23,  // Good - balanced
+  2: 18,  // High - visually lossless for most content
+  3: 14,  // Ultra - overkill for most uses
+  4: 0,   // Lossless (CRF 0)
+};
 
 let port = null;
 
@@ -128,25 +136,19 @@ function connectPort() {
 
 function getConfig() {
   let output = $("output").value;
-  const codec = $("codec").value;
-  const extMap = {
-    libx264: ".mp4",
-    prores: ".mov",
-    ffv1: ".mkv",
-    "libvpx-vp9": ".webm",
-  };
-  const ext = extMap[codec] || ".mp4";
-  output = output.replace(/\.\w+$/, "") + ext;
+  output = output.replace(/\.\w+$/, "") + ".mp4";
 
   const upscaleVal = $("upscale").value;
+  const quality = parseInt($("quality").value);
+  const crf = QUALITY_TO_CRF[quality];
 
   return {
     width: parseInt(widthInput.value) || 0,
     height: parseInt(heightInput.value) || 0,
     fps: parseInt($("fps").value),
     duration: parseInt($("duration").value),
-    codec: codec,
-    crf: parseInt($("crf").value),
+    codec: "libx264",
+    crf: crf,
     output: output,
     upscale: upscaleVal !== "none" ? upscaleVal : null,
   };
