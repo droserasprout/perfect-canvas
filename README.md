@@ -2,7 +2,7 @@
 
 This is a Firefox extension to accurately capture WebGL canvas content. It's designed for algorave/visual programming tools like Hydra and Cables.gl, but should work with any WebGL canvas.
 
-<img src="screenshot.png" alt="Screenshot of Perfect Canvas in action" width="600">
+<img src="screenshot.png" alt="Screenshot of Perfect Canvas in action" width="200">
 
 ## Features
 
