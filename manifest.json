@@ -7,8 +7,12 @@
     "gecko": {
       "id": "perfect-canvas@localhost",
       "data_collection_permissions": {
-        "required": [],
+        "required": [
+          "websiteContent",
+          "websiteActivity"
+        ],
         "optional": []
+      }
     }
   },
   "permissions": [
