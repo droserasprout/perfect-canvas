@@ -51,8 +51,9 @@
       console.log(`[CC]   #${i}: id="${c.id}" class="${c.className}" ${c.width}×${c.height}`);
     });
 
-    return document.querySelector("#glcanvas")
-        || document.querySelector("canvas.cables")
+    return document.querySelector("#glcanvas")     // Hydra
+        || document.querySelector("#hydra-canvas") // Strudel
+        || document.querySelector("canvas.cables") // Cables
         || (all.length > 1
             ? [...all].sort((a, b) => (b.width * b.height) - (a.width * a.height))[0]
             : all[0])

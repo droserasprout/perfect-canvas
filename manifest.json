@@ -28,6 +28,7 @@
         "https://sandbox.cables.gl/*",
         "https://editor.p5js.org/*",
         "https://www.shadertoy.com/*",
+        "https://strudel.cc/*",
         "*://localhost/*"
       ],
       "js": ["content.js"],
