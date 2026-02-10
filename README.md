@@ -42,7 +42,10 @@ sh ./install.sh
 
 ## Roadmap
 
-- [ ] Fix Strudel support (doesn't affect time)
+- [ ] Publish on AMO
+- [ ] Bug: FPS affects speed, probably in Strudel only
+- [ ] Progress bar and rendering speed in frames in popup UI
+- [ ] Timeout of no frames were received after some time. Currently just hangs untill reload
+- [ ] Fix Strudel support; addon doesn't slow down rendering
 - [ ] Option to select canvas if multiple are present
 - [ ] Add audio capture support (tricky, but possible)
-- [ ] Publish on AMO
