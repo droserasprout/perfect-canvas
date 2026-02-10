@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-HOST_SCRIPT="${SCRIPT_DIR}/canvas_capture.py"
+HOST_SCRIPT="${SCRIPT_DIR}/perfect_canvas.py"
 MANIFEST_DIR="${HOME}/.mozilla/native-messaging-hosts"
 
 chmod +x "${HOST_SCRIPT}"
@@ -10,11 +10,11 @@ chmod +x "${HOST_SCRIPT}"
 mkdir -p "${MANIFEST_DIR}"
 
 sed "s|%%SCRIPT_PATH%%|${HOST_SCRIPT}|" \
-  "${SCRIPT_DIR}/canvas_capture.json.in" \
-  > "${MANIFEST_DIR}/canvas_capture.json"
+  "${SCRIPT_DIR}/perfect_canvas.json.in" \
+  > "${MANIFEST_DIR}/perfect_canvas.json"
 
 echo "✅ Installed native messaging manifest to:"
-echo "   ${MANIFEST_DIR}/canvas_capture.json"
+echo "   ${MANIFEST_DIR}/perfect_canvas.json"
 echo ""
 echo "   Host script: ${HOST_SCRIPT}"
 echo ""

@@ -1,11 +1,11 @@
 {
   "manifest_version": 2,
-  "name": "Canvas Capture",
+  "name": "Perfect Canvas",
   "version": "0.1.0",
-  "description": "Frame-perfect canvas capture to FFmpeg",
+  "description": "Frame-perfect WebGL canvas capture to FFmpeg",
   "browser_specific_settings": {
     "gecko": {
-      "id": "canvas-capture@localhost"
+      "id": "perfect-canvas@localhost"
     }
   },
   "permissions": [
@@ -18,7 +18,7 @@
   },
   "browser_action": {
     "default_popup": "popup/popup.html",
-    "default_title": "Canvas Capture"
+    "default_title": "Perfect Canvas"
   },
   "content_scripts": [
     {

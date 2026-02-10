@@ -74,7 +74,7 @@ async function handleStart(config) {
   L("Active tab:", tabId, tabs[0].url);
   setState({ status: "starting" });
 
-  nativePort = browser.runtime.connectNative("canvas_capture");
+  nativePort = browser.runtime.connectNative("perfect_canvas");
   L("Native port created");
 
   nativePort.onMessage.addListener((msg) => {

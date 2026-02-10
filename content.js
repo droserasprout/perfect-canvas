@@ -15,37 +15,37 @@ browser.runtime.onMessage.addListener((msg) => {
     console.log("[CC content] Frame port opened, injecting capture script");
     injectCaptureScript(msg.config);
   } else if (msg.action === "stop_capture") {
-    window.postMessage({ type: "__cc_cmd", action: "stop" }, "*");
+    window.postMessage({ type: "__pc_cmd", action: "stop" }, "*");
   }
 });
 
 window.addEventListener("message", (e) => {
   if (!e.data || !e.data.type) return;
 
-  if (e.data.type === "__cc_meta") {
+  if (e.data.type === "__pc_meta") {
     if (framePort) framePort.postMessage({ type: "meta", meta: e.data.meta });
-  } else if (e.data.type === "__cc_frame") {
+  } else if (e.data.type === "__pc_frame") {
     if (framePort) framePort.postMessage({ type: "frame", data: e.data.payload });
     // ACK to inject.js: "I've forwarded your frame, send the next one"
-    window.postMessage({ type: "__cc_ack" }, "*");
-  } else if (e.data.type === "__cc_done") {
+    window.postMessage({ type: "__pc_ack" }, "*");
+  } else if (e.data.type === "__pc_done") {
     if (framePort) framePort.postMessage({ type: "done", frames: e.data.frames });
     browser.runtime.sendMessage({ type: "capture_ended" });
-  } else if (e.data.type === "__cc_progress") {
+  } else if (e.data.type === "__pc_progress") {
     if (framePort) framePort.postMessage({ type: "progress", frame: e.data.frame, total: e.data.total });
   }
 });
 
 function injectCaptureScript(config) {
   if (injected) {
-    window.postMessage({ type: "__cc_cmd", action: "start", config }, "*");
+    window.postMessage({ type: "__pc_cmd", action: "start", config }, "*");
     return;
   }
   if (injecting) {
     const wait = setInterval(() => {
       if (injected) {
         clearInterval(wait);
-        window.postMessage({ type: "__cc_cmd", action: "start", config }, "*");
+        window.postMessage({ type: "__pc_cmd", action: "start", config }, "*");
       }
     }, 50);
     return;

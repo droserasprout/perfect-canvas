@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Canvas Capture — native messaging host with websockets + FFmpeg."""
+"""Perfect Canvas — native messaging host with websockets + FFmpeg."""
 
 import asyncio
 import json
@@ -20,7 +20,7 @@ except ImportError:
 # ─── Logging ──────────────────────────────────────────────────────────────────
 
 LOG_PATH = Path(os.environ.get(
-    "CC_LOG", Path.home() / ".local" / "share" / "canvas-capture" / "host.log"
+    "CC_LOG", Path.home() / ".local" / "share" / "perfect-canvas" / "host.log"
 ))
 LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
 

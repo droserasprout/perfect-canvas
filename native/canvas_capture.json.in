@@ -1,7 +1,0 @@
-{
-  "name": "canvas_capture",
-  "description": "Canvas Capture FFmpeg host",
-  "path": "%%SCRIPT_PATH%%",
-  "type": "stdio",
-  "allowed_extensions": ["canvas-capture@localhost"]
-}

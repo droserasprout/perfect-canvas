@@ -1,0 +1,7 @@
+{
+  "name": "perfect_canvas",
+  "description": "Perfect Canvas FFmpeg host",
+  "path": "%%SCRIPT_PATH%%",
+  "type": "stdio",
+  "allowed_extensions": ["perfect-canvas@localhost"]
+}

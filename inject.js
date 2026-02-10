@@ -46,9 +46,9 @@
 
   function findCanvas() {
     const all = document.querySelectorAll("canvas");
-    console.log(`[CC] Found ${all.length} canvas element(s)`);
+    console.log(`[PC] Found ${all.length} canvas element(s)`);
     all.forEach((c, i) => {
-      console.log(`[CC]   #${i}: id="${c.id}" class="${c.className}" ${c.width}×${c.height}`);
+      console.log(`[PC]   #${i}: id="${c.id}" class="${c.className}" ${c.width}×${c.height}`);
     });
 
     return document.querySelector("#glcanvas")     // Hydra
@@ -70,7 +70,7 @@
     const dpr = window.devicePixelRatio || 1;
     const cssW = Math.round(width / dpr);
     const cssH = Math.round(height / dpr);
-    console.log(`[CC] Cables dialog: requesting ${cssW}×${cssH} CSS (DPR ${dpr}) → target ${width}×${height} buffer`);
+    console.log(`[PC] Cables dialog: requesting ${cssW}×${cssH} CSS (DPR ${dpr}) → target ${width}×${height} buffer`);
 
     // 1. Open the dialog
     CABLES.CMD.RENDERER.changeSize();
@@ -86,7 +86,7 @@
     }
 
     if (!input || !okBtn) {
-      console.warn("[CC] Cables modal elements not found");
+      console.warn("[PC] Cables modal elements not found");
       document.querySelector(".modalclose")?.click();
       return false;
     }
@@ -112,7 +112,7 @@
 
     const modalStillOpen = document.querySelector(".modalcontainer");
     if (modalStillOpen) {
-      console.log("[CC] Modal still open, trying Enter key");
+      console.log("[PC] Modal still open, trying Enter key");
       const enterEvent = new KeyboardEvent("keydown", {
         key: "Enter",
         code: "Enter",
@@ -127,7 +127,7 @@
     // 6. Final fallback: close modal manually
     const stillOpen = document.querySelector(".modalcontainer");
     if (stillOpen) {
-      console.warn("[CC] Modal won't close, forcing close");
+      console.warn("[PC] Modal won't close, forcing close");
       document.querySelector(".modalclose")?.dispatchEvent(clickEvent);
       return false;
     }
@@ -140,24 +140,24 @@
     // Hydra
     try {
       if (typeof window.setResolution === "function") {
-        console.log("[CC] Hydra → setResolution()");
+        console.log("[PC] Hydra → setResolution()");
         window.setResolution(width, height);
         return;
       }
-    } catch (e) { console.warn("[CC] setResolution error:", e); }
+    } catch (e) { console.warn("[PC] setResolution error:", e); }
 
     // Cables — use the UI dialog
     try {
       if (window.CABLES && CABLES.patch && CABLES.patch.cgl) {
-        console.log("[CC] Cables → using changeSize() dialog");
+        console.log("[PC] Cables → using changeSize() dialog");
         const ok = await resizeCablesViaUI(width, height);
         if (ok) {
-          console.log(`[CC] Cables resized to ${width}×${height}`);
+          console.log(`[PC] Cables resized to ${width}×${height}`);
           return;
         }
-        console.warn("[CC] Cables dialog method failed, falling back");
+        console.warn("[PC] Cables dialog method failed, falling back");
       }
-    } catch (e) { console.warn("[CC] Cables resize error:", e); }
+    } catch (e) { console.warn("[PC] Cables resize error:", e); }
 
     // Generic fallback
     canvas.width = width;
@@ -181,7 +181,7 @@
       const readW = Math.min(width, dbW);
       const readH = Math.min(height, dbH);
 
-      console.log(`[CC] readPixels: target ${width}×${height}, drawingBuffer ${dbW}×${dbH}, reading ${readW}×${readH}`);
+      console.log(`[PC] readPixels: target ${width}×${height}, drawingBuffer ${dbW}×${dbH}, reading ${readW}×${readH}`);
 
       const buf = new Uint8Array(readW * readH * 4);
       gl.readPixels(0, 0, readW, readH, gl.RGBA, gl.UNSIGNED_BYTE, buf);
@@ -199,7 +199,7 @@
       // Safety timeout — if ACK is lost, don't hang forever
       setTimeout(() => {
         if (ackResolve === resolve) {
-          console.warn("[CC] ACK timeout, continuing");
+          console.warn("[PC] ACK timeout, continuing");
           ackResolve = null;
           resolve();
         }
@@ -208,12 +208,12 @@
   }
 
   async function sendFrame(buf) {
-    window.postMessage({ type: "__cc_frame", payload: buf }, "*", [buf]);
+    window.postMessage({ type: "__pc_frame", payload: buf }, "*", [buf]);
     await waitForAck();
   }
 
   async function captureLoop(canvas, width, height) {
-    console.log("[CC] Waiting for app to settle after resize...");
+    console.log("[PC] Waiting for app to settle after resize...");
     await new Promise((r) => setTimeout(r, 500));
 
     // Determine actual drawing buffer size and make it even
@@ -230,13 +230,13 @@
     // Force even dimensions
     encW = encW - (encW % 2);
     encH = encH - (encH % 2);
-    console.log(`[CC] Encoding at: ${encW}×${encH} (even-aligned)`);
+    console.log(`[PC] Encoding at: ${encW}×${encH} (even-aligned)`);
 
-    console.log("[CC] Reading first frame...");
+    console.log("[PC] Reading first frame...");
     const firstRead = readPixels(canvas, encW, encH);
 
     window.postMessage({
-      type: "__cc_meta",
+      type: "__pc_meta",
       meta: {
         type: "meta",
         width: encW,
@@ -250,7 +250,7 @@
 
     await sendFrame(firstRead.data.buffer.slice(0));
     frameCount = 1;
-    console.log("[CC] First frame sent");
+    console.log("[PC] First frame sent");
     reportProgress();
 
     while (capturing && frameCount < totalFrames) {
@@ -260,7 +260,7 @@
       const callbacks = frameCallbacks.splice(0);
       fakeTime += frameDuration;
       for (const { cb } of callbacks) {
-        try { cb(fakeTime); } catch (e) { console.error("[CC] callback error:", e); }
+        try { cb(fakeTime); } catch (e) { console.error("[PC] callback error:", e); }
       }
 
       if (!capturing) break;
@@ -277,19 +277,19 @@
   }
 
   function reportProgress() {
-    console.log(`[CC] Frame ${frameCount}/${totalFrames}`);
-    window.postMessage({ type: "__cc_progress", frame: frameCount, total: totalFrames }, "*");
+    console.log(`[PC] Frame ${frameCount}/${totalFrames}`);
+    window.postMessage({ type: "__pc_progress", frame: frameCount, total: totalFrames }, "*");
   }
 
   async function startCapture(config) {
     if (capturing) {
-      console.warn("[CC] Already capturing");
+      console.warn("[PC] Already capturing");
       return;
     }
 
     const canvas = findCanvas();
     if (!canvas) {
-      console.error("[CC] No <canvas> found!");
+      console.error("[PC] No <canvas> found!");
       return;
     }
 
@@ -301,14 +301,14 @@
       styleHeight: canvas.style.height,
       styleObjectFit: canvas.style.objectFit,
     };
-    console.log(`[CC] Saved original: ${originalCanvas.width}×${originalCanvas.height}`);
+    console.log(`[PC] Saved original: ${originalCanvas.width}×${originalCanvas.height}`);
 
     const width = config.width || canvas.width;
     const height = config.height || canvas.height;
     const fps = config.fps || 60;
     const duration = config.duration || 10;
 
-    console.log(`[CC] Target: ${width}×${height} @ ${fps}fps, ${duration}s`);
+    console.log(`[PC] Target: ${width}×${height} @ ${fps}fps, ${duration}s`);
 
     await resizeApp(canvas, width, height);  // Must await!
 
@@ -328,7 +328,7 @@
     performance.now = () => fakeTime;
 
     capturing = true;
-    console.log(`[CC] Capturing ${width}×${height} @ ${fps}fps → ${totalFrames} frames`);
+    console.log(`[PC] Capturing ${width}×${height} @ ${fps}fps → ${totalFrames} frames`);
     captureLoop(canvas, width, height);
   }
 
@@ -350,21 +350,21 @@
     if (targetCanvas && originalCanvas.width) {
       // Cables: restore via UI dialog
       if (window.CABLES && CABLES.CMD?.RENDERER?.changeSize) {
-        console.log("[CC] Restoring Cables via dialog");
+        console.log("[PC] Restoring Cables via dialog");
         try {
           const ok = await resizeCablesViaUI(originalCanvas.width, originalCanvas.height);
           if (ok) {
-            console.log("[CC] Cables restored");
+            console.log("[PC] Cables restored");
           } else {
             // Fallback: reload iframe
             const iframe = window.frameElement;
             if (iframe) {
-              console.log("[CC] Dialog failed, reloading iframe");
+              console.log("[PC] Dialog failed, reloading iframe");
               setTimeout(() => { iframe.src = iframe.src; }, 200);
             }
           }
         } catch (e) {
-          console.warn("[CC] Cables restore error:", e);
+          console.warn("[PC] Cables restore error:", e);
         }
       }
       // Hydra / generic
@@ -386,17 +386,17 @@
       targetCanvas = null;
     }
 
-    window.postMessage({ type: "__cc_done", frames: frameCount }, "*");
-    console.log(`[CC] Capture stopped at frame ${frameCount}`);
+    window.postMessage({ type: "__pc_done", frames: frameCount }, "*");
+    console.log(`[PC] Capture stopped at frame ${frameCount}`);
   }
 
   window.addEventListener("message", (e) => {
     if (!e.data || !e.data.type) return;
-    if (e.data.type === "__cc_cmd") {
+    if (e.data.type === "__pc_cmd") {
       if (e.data.action === "start") startCapture(e.data.config);
       if (e.data.action === "stop") stopCapture();
     }
-    if (e.data.type === "__cc_ack" && ackResolve) {
+    if (e.data.type === "__pc_ack" && ackResolve) {
       const r = ackResolve;
       ackResolve = null;
       r();
