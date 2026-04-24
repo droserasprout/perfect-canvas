@@ -12,8 +12,13 @@
   let totalFrames = 0;
   let fakeTime = 0;
   let frameDuration = 0;
-  let ackResolve = null;
   let captureStartTs = 0;
+
+  // Bounded in-flight pipeline. Producer blocks only when this many frames
+  // are unacked; hides per-frame round-trip latency while keeping memory
+  // bounded (N × frame size). At 1080p RGBA, 4 × 8MB = 32MB ceiling.
+  const MAX_IN_FLIGHT = 4;
+  const pending = [];
 
   let originalCanvas = {
     width: 0,
@@ -208,23 +213,30 @@
     return buf;
   }
 
-  function waitForAck() {
-    return new Promise((resolve) => {
-      ackResolve = resolve;
-      // Safety timeout — if ACK is lost, don't hang forever
-      setTimeout(() => {
-        if (ackResolve === resolve) {
-          console.warn("[PC] ACK timeout, continuing");
-          ackResolve = null;
-          resolve();
-        }
-      }, 2000);
-    });
+  async function sendFrame(buf) {
+    // Block until the pipeline has a free slot (FIFO on oldest pending ACK)
+    while (capturing && pending.length >= MAX_IN_FLIGHT) {
+      await pending[0].promise;
+    }
+    if (!capturing) return;
+
+    let resolve;
+    const promise = new Promise((r) => { resolve = r; });
+    pending.push({ resolve, promise });
+
+    window.postMessage({ type: "__pc_frame", payload: buf }, "*", [buf]);
   }
 
-  async function sendFrame(buf) {
-    window.postMessage({ type: "__pc_frame", payload: buf }, "*", [buf]);
-    await waitForAck();
+  function onAck() {
+    const entry = pending.shift();
+    if (entry) entry.resolve();
+  }
+
+  function drainPending() {
+    while (pending.length) {
+      const entry = pending.shift();
+      entry.resolve();
+    }
   }
 
   async function captureLoop(canvas, width, height) {
@@ -415,6 +427,7 @@
   async function stopCapture() {
     if (!capturing) return;
     capturing = false;
+    drainPending();
 
     window.requestAnimationFrame = origRAF;
     window.cancelAnimationFrame = origCAF;
@@ -422,8 +435,8 @@
     performance.now = origPerfNow;
 
     // Re-queue orphaned callbacks so the app's render loop resumes
-    const pending = frameCallbacks.splice(0);
-    for (const { cb } of pending) {
+    const orphanedCallbacks = frameCallbacks.splice(0);
+    for (const { cb } of orphanedCallbacks) {
       origRAF(cb);
     }
 
@@ -492,10 +505,8 @@
       if (e.data.action === "start") startCapture(e.data.config);
       if (e.data.action === "stop") stopCapture();
     }
-    if (e.data.type === "__pc_ack" && ackResolve) {
-      const r = ackResolve;
-      ackResolve = null;
-      r();
+    if (e.data.type === "__pc_ack") {
+      onAck();
     }
   });
 
