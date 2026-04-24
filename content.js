@@ -47,6 +47,9 @@ browser.runtime.onMessage.addListener((msg) => {
     ws.onclose = () => {
       console.log("[CC content] WS closed");
       ws = null;
+      // If the socket dropped while inject was still capturing, unblock
+      // its pending ACK queue. stopCapture() is idempotent.
+      window.postMessage({ type: "__pc_cmd", action: "stop" }, "*");
     };
   } else if (msg.action === "stop_capture") {
     window.postMessage({ type: "__pc_cmd", action: "stop" }, "*");
