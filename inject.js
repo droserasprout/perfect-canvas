@@ -335,14 +335,8 @@
       styleWidth: canvas.style.width,
       styleHeight: canvas.style.height,
       styleObjectFit: canvas.style.objectFit,
-      styleVisibility: canvas.style.visibility,
     };
     console.log(`[PC] Saved original: ${originalCanvas.width}×${originalCanvas.height}`);
-
-    if (config.hidePreview) {
-      canvas.style.visibility = "hidden";
-      console.log("[PC] Preview hidden during capture");
-    }
 
     const width = config.width || canvas.width;
     const height = config.height || canvas.height;
@@ -390,10 +384,6 @@
     const orphanedCallbacks = frameCallbacks.splice(0);
     for (const { cb } of orphanedCallbacks) {
       origRAF(cb);
-    }
-
-    if (targetCanvas) {
-      targetCanvas.style.visibility = originalCanvas.styleVisibility;
     }
 
     if (targetCanvas && originalCanvas.width) {
