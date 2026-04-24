@@ -262,9 +262,23 @@
 
     // Emit frame 1 (initial scene) before the main loop so the page's
     // queued RAF callbacks don't advance scene-time past t=0.
+    const tFirstBeforeRead = profileEnabled ? origPerfNow() : 0;
     const firstRead = readPixels(canvas, gl, encW, encH);
+    const tFirstAfterRead = profileEnabled ? origPerfNow() : 0;
+    const firstPendingPre = pending.length;
     await sendFrame(firstRead.data.buffer, 1);
+    const tFirstAfterSend = profileEnabled ? origPerfNow() : 0;
     frameCount = 1;
+    if (profileEnabled) {
+      profileRows.push({
+        frame: 1,
+        raf_ms: 0,
+        cb_ms: 0,
+        gpu_ms: tFirstAfterRead - tFirstBeforeRead,
+        send_ms: tFirstAfterSend - tFirstAfterRead,
+        pending: firstPendingPre,
+      });
+    }
     reportProgress();
 
     // We're reading pixels, not presenting. Pace on setTimeout(0) instead of

@@ -150,6 +150,15 @@ async def handle_ws(websocket, config, done_event):
         done_event.set()
         return
 
+    codec = config.get("codec", "libx264")
+    if codec == "h264_vaapi" and not os.path.exists(VAAPI_DEVICE):
+        msg = (f"VAAPI device not found: {VAAPI_DEVICE} "
+               "(override via PC_VAAPI_DEVICE env var)")
+        log.error(msg)
+        nm_send({"type": "error", "message": msg})
+        done_event.set()
+        return
+
     log.info("ffmpeg: %s → %s", ffmpeg_bin, output)
 
     try:
