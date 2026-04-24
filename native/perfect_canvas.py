@@ -2,6 +2,7 @@
 """Perfect Canvas — native messaging host with websockets + FFmpeg."""
 
 import asyncio
+import csv
 import json
 import logging
 import os
@@ -9,6 +10,7 @@ import shutil
 import struct
 import sys
 import threading
+import time
 from pathlib import Path
 
 try:
@@ -66,14 +68,32 @@ def find_ffmpeg():
             return p
     return None
 
+VAAPI_DEVICE = os.environ.get("PC_VAAPI_DEVICE", "/dev/dri/renderD128")
+NVIDIA_DEVICE = "/dev/nvidia0"
+
+# x264-style slider preset → NVENC p1..p7. p1 fastest, p7 slowest.
+NVENC_PRESETS = {
+    "ultrafast": "p1",
+    "veryfast":  "p2",
+    "fast":      "p4",
+    "medium":    "p5",
+    "slow":      "p7",
+}
+
 def build_ffmpeg_cmd(ffmpeg_bin, width, height, fps, codec, crf, preset, output, vflip, upscale=None):
-    cmd = [
-        ffmpeg_bin, "-y", "-loglevel", "warning",
+    cmd = [ffmpeg_bin, "-y", "-loglevel", "warning"]
+
+    # VAAPI needs the device declared before the input.
+    if codec == "h264_vaapi":
+        cmd += ["-vaapi_device", VAAPI_DEVICE]
+
+    cmd += [
         "-f", "rawvideo", "-pixel_format", "rgba",
         "-video_size", f"{width}x{height}",
         "-framerate", str(fps),
         "-i", "pipe:0",
     ]
+
     vf = []
     if vflip:
         vf.append("vflip")
@@ -83,6 +103,16 @@ def build_ffmpeg_cmd(ffmpeg_bin, width, height, fps, codec, crf, preset, output,
 
     if codec == "libx264":
         cmd += ["-c:v", "libx264", "-crf", str(crf), "-preset", preset,
+                "-pix_fmt", "yuv420p"]
+    elif codec == "h264_vaapi":
+        # CPU-side filters first (vflip/scale), then hand to GPU via hwupload.
+        vf += ["format=nv12", "hwupload"]
+        cmd += ["-c:v", "h264_vaapi", "-qp", str(crf)]
+    elif codec == "h264_nvenc":
+        # NVENC accepts rawvideo directly; ffmpeg handles rgba→yuv420p.
+        nvenc_preset = NVENC_PRESETS.get(preset, "p4")
+        cmd += ["-c:v", "h264_nvenc", "-preset", nvenc_preset,
+                "-rc", "constqp", "-qp", str(crf),
                 "-pix_fmt", "yuv420p"]
     elif codec == "prores":
         cmd += ["-c:v", "prores_ks", "-profile:v", "3",
@@ -98,6 +128,29 @@ def build_ffmpeg_cmd(ffmpeg_bin, width, height, fps, codec, crf, preset, output,
     cmd.append(output)
     return cmd
 
+# ─── Profile log ──────────────────────────────────────────────────────────────
+
+PROFILE_COLS = ["frame", "raf_ms", "cb_ms", "gpu_ms", "send_ms", "pending", "ack_rtt_ms"]
+
+def write_profile_log(rows):
+    ts = time.strftime("%Y%m%d-%H%M%S")
+    path = Path(f"/tmp/perfect-canvas-{ts}.log")
+    with path.open("w", newline="") as f:
+        w = csv.writer(f, delimiter="\t")
+        w.writerow(PROFILE_COLS)
+        for row in rows:
+            ack = row.get("ack_rtt_ms")
+            w.writerow([
+                row.get("frame"),
+                f"{row.get('raf_ms', 0):.2f}",
+                f"{row.get('cb_ms', 0):.2f}",
+                f"{row.get('gpu_ms', 0):.2f}",
+                f"{row.get('send_ms', 0):.2f}",
+                row.get("pending", ""),
+                f"{ack:.2f}" if ack is not None else "",
+            ])
+    log.info("Profile written to %s (%d rows)", path, len(rows))
+
 # ─── WebSocket handler ───────────────────────────────────────────────────────
 
 async def handle_ws(websocket, config, done_event):
@@ -112,6 +165,28 @@ async def handle_ws(websocket, config, done_event):
         nm_send({"type": "error", "message": "ffmpeg not found"})
         done_event.set()
         return
+
+    codec = config.get("codec", "libx264")
+    if codec == "h264_vaapi" and not os.path.exists(VAAPI_DEVICE):
+        msg = (f"VAAPI device not found: {VAAPI_DEVICE} "
+               "(override via PC_VAAPI_DEVICE env var)")
+        log.error(msg)
+        nm_send({"type": "error", "message": msg})
+        done_event.set()
+        return
+    if codec == "h264_nvenc" and not os.path.exists(NVIDIA_DEVICE):
+        msg = f"NVIDIA device not found: {NVIDIA_DEVICE} (driver loaded?)"
+        log.error(msg)
+        nm_send({"type": "error", "message": msg})
+        done_event.set()
+        return
+
+    # PRIME offload so NVENC uses the discrete GPU on hybrid-graphics systems.
+    ffmpeg_env = os.environ.copy()
+    if codec == "h264_nvenc":
+        ffmpeg_env["__NV_PRIME_RENDER_OFFLOAD"] = "1"
+        ffmpeg_env["__VK_LAYER_NV_optimus"] = "NVIDIA_only"
+        ffmpeg_env["__GLX_VENDOR_LIBRARY_NAME"] = "nvidia"
 
     log.info("ffmpeg: %s → %s", ffmpeg_bin, output)
 
@@ -135,6 +210,7 @@ async def handle_ws(websocket, config, done_event):
                     log.info("FFmpeg cmd: %s", " ".join(cmd))
                     ffmpeg_proc = await asyncio.create_subprocess_exec(
                         *cmd,
+                        env=ffmpeg_env,
                         stdin=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.PIPE,
                     )
@@ -142,6 +218,12 @@ async def handle_ws(websocket, config, done_event):
 
                 elif msg["type"] == "done":
                     log.info("Done signal, frames=%s", msg.get("frames"))
+                    profile = msg.get("profile")
+                    if profile:
+                        try:
+                            write_profile_log(profile)
+                        except Exception:
+                            log.exception("Profile write failed")
                     break
 
             elif isinstance(message, bytes):

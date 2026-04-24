@@ -7,10 +7,11 @@ This is a Firefox extension to accurately capture WebGL canvas content. It's des
 ## Features
 
 - Pixel-perfect frame-by-frame capture.
-- Configurable resolution, FPS, and ffmpeg quality settings.
-- Automatically resize canvas to match capture resolution (and back).
-- Hydra and Cables.gl support: messes with time to ensure perfect frame timing.
-- Strudel support coming soon.
+- Configurable resolution, FPS, quality (CRF), and encoder speed (preset).
+- Codec choice: libx264 (CPU, default) or h264_vaapi (GPU, AMD/Intel).
+- Automatic canvas resize to match capture resolution (restored after).
+- Hydra, Cables.gl, and Strudel support: patches `requestAnimationFrame` / `performance.now` so output is frame-perfect regardless of real render speed.
+- Optional per-frame timing dump to `/tmp/perfect-canvas-<ts>.log` for profiling.
 
 ## Requirements
 
@@ -40,12 +41,25 @@ sh ./install.sh
 # 3. Open `about:debugging` in Firefox, click "Load Temporary Add-on", and select `manifest.json` in the project root.
 ```
 
+## Performance
+
+Test settings: 1080x1920, 5s, 30fps, q:high, s:ultrafast, /tmp write
+Setup #1: Ryzen 7 4800HS, CachyOS Linux
+
+| setup | project | real FPS |
+| - | - | - |
+| #1, Firefox 140 | Strudel+Hydra, fat project | 25-26 |
+| #1, Firefox 140 | [Hydra](https://hydra.ojack.xyz/?code=JTJGJTJGJTIwbGljZW5zZWQlMjB3aXRoJTIwQ0MlMjBCWS1OQy1TQSUyMDQuMCUyMGh0dHBzJTNBJTJGJTJGY3JlYXRpdmVjb21tb25zLm9yZyUyRmxpY2Vuc2VzJTJGYnktbmMtc2ElMkY0LjAlMkYlMEElMkYlMkYlMjBieSUyME9saXZpYSUyMEphY2slMEFvc2MoMjAlMkMlMjAwLjAzJTJDJTIwMS43KSUwQSUwOS5rYWxlaWQoKSUwQSUwOS5tdWx0KG9zYygyMCUyQyUyMDAuMDAxJTJDJTIwMCklMEElMDklMDkucm90YXRlKDEuNTgpKSUwQSUwOS5ibGVuZChvMCUyQyUyMDAuOTQpJTBBJTA5Lm1vZHVsYXRlU2NhbGUob3NjKDEwJTJDJTIwMC43OTMpJTJDJTIwLTAuMDMpJTBBJTA5LnNjYWxlKDAuOCUyQyUyMCgpJTIwJTNEJTNFJTIwMS4wNSUyMCUyQiUyMDAuMDYzJTIwKiUyME1hdGguc2luKDAuMDUlMjAqJTIwdGltZSkpJTBBJTA5Lm91dChvMCklM0I%3D), basic example | 30-41 |
+| #1, Firefox 140 | [cables.gl](https://cables.gl/edit/mwt7bf) | 17-32 |
+| #1, Hellfire 142 | [cables.gl](https://cables.gl/edit/mwt7bf) | 20-40 |
+| #1, Nightly 142 | [cables.gl](https://cables.gl/edit/mwt7bf) | 21-44 |
+
 ## Roadmap
 
-- [ ] Publish on AMO
+- [x] Publish on AMO
 - [ ] Bug: FPS affects speed, probably in Strudel only
 - [ ] Progress bar in popup UI (rendering speed after capture is already shown)
-- [ ] Timeout of no frames were received after some time. Currently just hangs untill reload
+- [ ] Timeout if no frames are received after some time. Currently just hangs until reload
 - [ ] Fix Strudel support; addon doesn't slow down rendering
 - [ ] Option to select canvas if multiple are present
 - [ ] Add audio capture support (tricky, but possible)
