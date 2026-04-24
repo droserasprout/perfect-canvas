@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import shutil
+import statistics
 import struct
 import sys
 import threading
@@ -21,9 +22,12 @@ except ImportError:
 
 # ─── Logging ──────────────────────────────────────────────────────────────────
 
-LOG_PATH = Path(os.environ.get(
-    "CC_LOG", Path.home() / ".local" / "share" / "perfect-canvas" / "host.log"
+CACHE_DIR = Path(os.environ.get(
+    "PC_CACHE_DIR", Path.home() / ".cache" / "perfect-canvas"
 ))
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+LOG_PATH = Path(os.environ.get("CC_LOG", CACHE_DIR / "host.log"))
 LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 logging.basicConfig(
@@ -131,10 +135,18 @@ def build_ffmpeg_cmd(ffmpeg_bin, width, height, fps, codec, crf, preset, output,
 # ─── Profile log ──────────────────────────────────────────────────────────────
 
 PROFILE_COLS = ["frame", "raf_ms", "cb_ms", "gpu_ms", "send_ms", "pending", "ack_rtt_ms"]
+STAT_COLS = ["raf_ms", "cb_ms", "gpu_ms", "send_ms", "pending", "ack_rtt_ms"]
+
+def _percentile(sorted_vals, p):
+    if not sorted_vals:
+        return 0.0
+    k = (len(sorted_vals) - 1) * p
+    lo, hi = int(k), min(int(k) + 1, len(sorted_vals) - 1)
+    return sorted_vals[lo] + (sorted_vals[hi] - sorted_vals[lo]) * (k - lo)
 
 def write_profile_log(rows):
     ts = time.strftime("%Y%m%d-%H%M%S")
-    path = Path(f"/tmp/perfect-canvas-{ts}.log")
+    path = CACHE_DIR / f"profile-{ts}.log"
     with path.open("w", newline="") as f:
         w = csv.writer(f, delimiter="\t")
         w.writerow(PROFILE_COLS)
@@ -148,6 +160,26 @@ def write_profile_log(rows):
                 f"{row.get('send_ms', 0):.2f}",
                 row.get("pending", ""),
                 f"{ack:.2f}" if ack is not None else "",
+            ])
+
+        f.write("\n# statistics (frames=%d)\n" % len(rows))
+        w.writerow(["# metric", "mean", "stddev", "min", "p50", "p95", "max"])
+        for col in STAT_COLS:
+            vals = [r[col] for r in rows if r.get(col) is not None]
+            if not vals:
+                w.writerow([f"# {col}", "", "", "", "", "", ""])
+                continue
+            svals = sorted(vals)
+            mean = statistics.fmean(vals)
+            stdev = statistics.pstdev(vals) if len(vals) > 1 else 0.0
+            w.writerow([
+                f"# {col}",
+                f"{mean:.2f}",
+                f"{stdev:.2f}",
+                f"{svals[0]:.2f}",
+                f"{_percentile(svals, 0.50):.2f}",
+                f"{_percentile(svals, 0.95):.2f}",
+                f"{svals[-1]:.2f}",
             ])
     log.info("Profile written to %s (%d rows)", path, len(rows))
 

@@ -11,7 +11,7 @@ This is a Firefox extension to accurately capture WebGL canvas content. It's des
 - Codec choice: libx264 (CPU, default) or h264_vaapi (GPU, AMD/Intel).
 - Automatic canvas resize to match capture resolution (restored after).
 - Hydra, Cables.gl, and Strudel support: patches `requestAnimationFrame` / `performance.now` so output is frame-perfect regardless of real render speed.
-- Optional per-frame timing dump to `/tmp/perfect-canvas-<ts>.log` for profiling.
+- Optional per-frame timing dump to `~/.cache/perfect-canvas/profile-<ts>.log` for profiling (with mean/stddev/min/p50/p95/max summary).
 
 ## Requirements
 
