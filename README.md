@@ -43,10 +43,13 @@ sh ./install.sh
 
 ## Performance
 
-| h/w | s/w | settings | real FPS | file size |
+Test settings: 1080x1920, 5s, 30fps, q:high, s:ultrafast, /tmp
+
+| h/w | project | real FPS | file size |
 | - | - | - | - | - |
-| Ryzen 7 4800HS | Strudel+Hydra, fat project | 1080x1920, 5s, 30fps, q:high, s:ultrafast | 25-26 | 117M |
-| Ryzen 7 4800HS | Hydra, basic example | 1080x1920, 5s, 30fps, q:high, s:ultrafast | 30-41 | 22M |
+| Ryzen 7 4800HS | Strudel+Hydra, fat project | 25-26 | 117M |
+| Ryzen 7 4800HS | Hydra, basic | 30-41 | 22M |
+| Ryzen 7 4800HS | Cables.gl, basic | 29-32 | 5.3M |
 
 ## Roadmap
 
