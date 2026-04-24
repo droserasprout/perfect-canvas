@@ -43,13 +43,16 @@ sh ./install.sh
 
 ## Performance
 
-Test settings: 1080x1920, 5s, 30fps, q:high, s:ultrafast, /tmp
+Test settings: 1080x1920, 5s, 30fps, q:high, s:ultrafast, /tmp write
+Setup #1: Ryzen 7 4800HS, CachyOS Linux
 
-| h/w | project | real FPS | file size |
-| - | - | - | - | - |
-| Ryzen 7 4800HS | Strudel+Hydra, fat project | 25-26 | 117M |
-| Ryzen 7 4800HS | Hydra, basic | 30-41 | 22M |
-| Ryzen 7 4800HS | Cables.gl, basic | 29-32 | 5.3M |
+| setup | project | real FPS |
+| - | - | - |
+| #1, Firefox 140 | Strudel+Hydra, fat project | 25-26 |
+| #1, Firefox 140 | [Hydra](https://hydra.ojack.xyz/?code=JTJGJTJGJTIwbGljZW5zZWQlMjB3aXRoJTIwQ0MlMjBCWS1OQy1TQSUyMDQuMCUyMGh0dHBzJTNBJTJGJTJGY3JlYXRpdmVjb21tb25zLm9yZyUyRmxpY2Vuc2VzJTJGYnktbmMtc2ElMkY0LjAlMkYlMEElMkYlMkYlMjBieSUyME9saXZpYSUyMEphY2slMEFvc2MoMjAlMkMlMjAwLjAzJTJDJTIwMS43KSUwQSUwOS5rYWxlaWQoKSUwQSUwOS5tdWx0KG9zYygyMCUyQyUyMDAuMDAxJTJDJTIwMCklMEElMDklMDkucm90YXRlKDEuNTgpKSUwQSUwOS5ibGVuZChvMCUyQyUyMDAuOTQpJTBBJTA5Lm1vZHVsYXRlU2NhbGUob3NjKDEwJTJDJTIwMC43OTMpJTJDJTIwLTAuMDMpJTBBJTA5LnNjYWxlKDAuOCUyQyUyMCgpJTIwJTNEJTNFJTIwMS4wNSUyMCUyQiUyMDAuMDYzJTIwKiUyME1hdGguc2luKDAuMDUlMjAqJTIwdGltZSkpJTBBJTA5Lm91dChvMCklM0I%3D), basic example | 30-41 |
+| #1, Firefox 140 | [cables.gl](https://cables.gl/edit/mwt7bf) | 17-32 |
+| #1, Hellfire 142 | [cables.gl](https://cables.gl/edit/mwt7bf) | 20-40 |
+| #1, Nightly 142 | [cables.gl](https://cables.gl/edit/mwt7bf) | 21-44 |
 
 ## Roadmap
 
