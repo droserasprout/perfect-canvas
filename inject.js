@@ -167,22 +167,13 @@
     window.dispatchEvent(new Event("resize"));
   }
 
-  function readPixels(canvas, width, height) {
-    let gl = null;
-    try { gl = canvas.getContext("webgl2"); } catch (_) {}
-    if (!gl) try { gl = canvas.getContext("webgl"); } catch (_) {}
-
+  function readPixels(canvas, gl, width, height) {
     if (gl) {
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
-      const dbW = gl.drawingBufferWidth;
-      const dbH = gl.drawingBufferHeight;
-
       // Clamp to drawing buffer but use requested (even) size
-      const readW = Math.min(width, dbW);
-      const readH = Math.min(height, dbH);
-
-      console.log(`[PC] readPixels: target ${width}×${height}, drawingBuffer ${dbW}×${dbH}, reading ${readW}×${readH}`);
+      const readW = Math.min(width, gl.drawingBufferWidth);
+      const readH = Math.min(height, gl.drawingBufferHeight);
 
       const buf = new Uint8Array(readW * readH * 4);
       gl.readPixels(0, 0, readW, readH, gl.RGBA, gl.UNSIGNED_BYTE, buf);
@@ -234,7 +225,7 @@
     console.log(`[PC] Encoding at: ${encW}×${encH} (even-aligned)`);
 
     console.log("[PC] Reading first frame...");
-    const firstRead = readPixels(canvas, encW, encH);
+    const firstRead = readPixels(canvas, gl, encW, encH);
 
     window.postMessage({
       type: "__pc_meta",
@@ -250,7 +241,7 @@
     await new Promise((r) => setTimeout(r, 150));
 
     captureStartTs = origPerfNow();
-    await sendFrame(firstRead.data.buffer.slice(0));
+    await sendFrame(firstRead.data.buffer);
     frameCount = 1;
     console.log("[PC] First frame sent");
     reportProgress();
@@ -259,16 +250,18 @@
       await new Promise((resolve) => origRAF(resolve));
       if (!capturing) break;
 
-      const callbacks = frameCallbacks.splice(0);
       fakeTime += frameDuration;
-      for (const { cb } of callbacks) {
-        try { cb(fakeTime); } catch (e) { console.error("[PC] callback error:", e); }
+      if (frameCallbacks.length) {
+        const callbacks = frameCallbacks.splice(0);
+        for (const { cb } of callbacks) {
+          try { cb(fakeTime); } catch (e) { console.error("[PC] callback error:", e); }
+        }
       }
 
       if (!capturing) break;
 
-      const { data } = readPixels(canvas, encW, encH);
-      await sendFrame(data.buffer.slice(0));
+      const { data } = readPixels(canvas, gl, encW, encH);
+      await sendFrame(data.buffer);
       frameCount++;
 
       if (frameCount % 10 === 0) reportProgress();
