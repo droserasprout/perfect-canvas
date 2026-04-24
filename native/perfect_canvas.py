@@ -69,6 +69,16 @@ def find_ffmpeg():
     return None
 
 VAAPI_DEVICE = os.environ.get("PC_VAAPI_DEVICE", "/dev/dri/renderD128")
+NVIDIA_DEVICE = "/dev/nvidia0"
+
+# x264-style slider preset → NVENC p1..p7. p1 fastest, p7 slowest.
+NVENC_PRESETS = {
+    "ultrafast": "p1",
+    "veryfast":  "p2",
+    "fast":      "p4",
+    "medium":    "p5",
+    "slow":      "p7",
+}
 
 def build_ffmpeg_cmd(ffmpeg_bin, width, height, fps, codec, crf, preset, output, vflip, upscale=None):
     cmd = [ffmpeg_bin, "-y", "-loglevel", "warning"]
@@ -98,6 +108,12 @@ def build_ffmpeg_cmd(ffmpeg_bin, width, height, fps, codec, crf, preset, output,
         # CPU-side filters first (vflip/scale), then hand to GPU via hwupload.
         vf += ["format=nv12", "hwupload"]
         cmd += ["-c:v", "h264_vaapi", "-qp", str(crf)]
+    elif codec == "h264_nvenc":
+        # NVENC accepts rawvideo directly; ffmpeg handles rgba→yuv420p.
+        nvenc_preset = NVENC_PRESETS.get(preset, "p4")
+        cmd += ["-c:v", "h264_nvenc", "-preset", nvenc_preset,
+                "-rc", "constqp", "-qp", str(crf),
+                "-pix_fmt", "yuv420p"]
     elif codec == "prores":
         cmd += ["-c:v", "prores_ks", "-profile:v", "3",
                 "-pix_fmt", "yuv422p10le"]
@@ -158,6 +174,19 @@ async def handle_ws(websocket, config, done_event):
         nm_send({"type": "error", "message": msg})
         done_event.set()
         return
+    if codec == "h264_nvenc" and not os.path.exists(NVIDIA_DEVICE):
+        msg = f"NVIDIA device not found: {NVIDIA_DEVICE} (driver loaded?)"
+        log.error(msg)
+        nm_send({"type": "error", "message": msg})
+        done_event.set()
+        return
+
+    # PRIME offload so NVENC uses the discrete GPU on hybrid-graphics systems.
+    ffmpeg_env = os.environ.copy()
+    if codec == "h264_nvenc":
+        ffmpeg_env["__NV_PRIME_RENDER_OFFLOAD"] = "1"
+        ffmpeg_env["__VK_LAYER_NV_optimus"] = "NVIDIA_only"
+        ffmpeg_env["__GLX_VENDOR_LIBRARY_NAME"] = "nvidia"
 
     log.info("ffmpeg: %s → %s", ffmpeg_bin, output)
 
@@ -181,6 +210,7 @@ async def handle_ws(websocket, config, done_event):
                     log.info("FFmpeg cmd: %s", " ".join(cmd))
                     ffmpeg_proc = await asyncio.create_subprocess_exec(
                         *cmd,
+                        env=ffmpeg_env,
                         stdin=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.PIPE,
                     )
