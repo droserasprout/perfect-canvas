@@ -11,6 +11,7 @@ browser.runtime.onMessage.addListener((msg) => {
       console.log("[CC content] No canvas in this frame, skipping");
       return;
     }
+    if (framePort) framePort.disconnect();
     framePort = browser.runtime.connect({ name: "frames" });
     console.log("[CC content] Frame port opened, injecting capture script");
     injectCaptureScript(msg.config);

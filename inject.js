@@ -41,7 +41,7 @@
 
   function patchedCAF(id) {
     frameCallbacks = frameCallbacks.filter((f) => f.id !== id);
-    origCAF(id);
+    if (!capturing) origCAF(id);
   }
 
   function findCanvas() {

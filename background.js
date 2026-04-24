@@ -58,11 +58,6 @@ browser.runtime.onConnect.addListener((port) => {
   }
 });
 
-browser.runtime.onMessage.addListener((msg) => {
-  if (msg.type === "capture_ended") {
-    L("Content reports capture ended");
-  }
-});
 
 async function handleStart(config) {
   const tabs = await browser.tabs.query({ active: true, currentWindow: true });
@@ -123,6 +118,7 @@ function connectWS(port, tabId, config) {
   ws.onerror = () => {
     L("WS error");
     setState({ status: "error", error: "WebSocket failed in background" });
+    if (nativePort) { try { nativePort.disconnect(); } catch (_) {} nativePort = null; }
   };
 
   ws.onclose = () => {
@@ -136,6 +132,7 @@ function cleanupWS() {
 }
 
 function handleStop() {
+  setState({ status: "stopping" });
   browser.tabs.query({ active: true, currentWindow: true }).then((tabs) => {
     if (tabs.length) browser.tabs.sendMessage(tabs[0].id, { action: "stop_capture" });
   });
