@@ -5,8 +5,7 @@ const L = (...a) => console.log("[CC bg]", ...a);
 let state = { status: "idle" };
 let popupPort = null;
 let nativePort = null;
-let framePort = null;
-let ws = null;
+let activeTabId = null;
 
 function setState(s) {
   Object.assign(state, s);
@@ -34,40 +33,22 @@ browser.runtime.onConnect.addListener((port) => {
       L("Popup disconnected");
     });
   }
-
-  if (port.name === "frames") {
-    L("Frame port connected");
-    framePort = port;
-
-    port.onMessage.addListener((msg) => {
-      if (!ws || ws.readyState !== WebSocket.OPEN) {
-        L("WS not open, dropping", msg.type);
-        return;
-      }
-
-      if (msg.type === "meta") {
-        ws.send(JSON.stringify(msg.meta));
-      } else if (msg.type === "frame") {
-        ws.send(msg.data);
-      } else if (msg.type === "done") {
-        ws.send(JSON.stringify({ type: "done", frames: msg.frames }));
-        setState({
-          elapsedMs: msg.elapsedMs,
-          actualFps: msg.actualFps,
-          targetFps: msg.targetFps,
-        });
-      } else if (msg.type === "progress") {
-        setState({ frame: msg.frame, total: msg.total });
-      }
-    });
-
-    port.onDisconnect.addListener(() => {
-      if (framePort === port) framePort = null;
-      L("Frame port disconnected");
-    });
-  }
 });
 
+// Content script relays progress and completion via one-shot sendMessage.
+browser.runtime.onMessage.addListener((msg) => {
+  if (msg.type === "progress") {
+    setState({ frame: msg.frame, total: msg.total });
+  } else if (msg.type === "capture_metrics") {
+    setState({
+      elapsedMs: msg.elapsedMs,
+      actualFps: msg.actualFps,
+      targetFps: msg.targetFps,
+    });
+  } else if (msg.type === "capture_error") {
+    setState({ status: "error", error: msg.error });
+  }
+});
 
 async function handleStart(config) {
   const tabs = await browser.tabs.query({ active: true, currentWindow: true });
@@ -75,8 +56,8 @@ async function handleStart(config) {
     setState({ status: "error", error: "No active tab" });
     return;
   }
-  const tabId = tabs[0].id;
-  L("Active tab:", tabId, tabs[0].url);
+  activeTabId = tabs[0].id;
+  L("Active tab:", activeTabId, tabs[0].url);
   setState({ status: "starting" });
 
   nativePort = browser.runtime.connectNative("perfect_canvas");
@@ -86,14 +67,18 @@ async function handleStart(config) {
     L("Native message:", msg);
 
     if (msg.type === "ready") {
-      connectWS(msg.ws_port, tabId, config);
+      setState({ status: "capturing", frame: 0 });
+      browser.tabs.sendMessage(activeTabId, {
+        action: "start_capture",
+        config,
+        ws_port: msg.ws_port,
+      });
+      L("Content script notified with ws_port:", msg.ws_port);
     } else if (msg.type === "done") {
       setState({ status: "done", output: msg.output, frames: msg.frames });
-      cleanupWS();
       nativePort = null;
     } else if (msg.type === "error") {
       setState({ status: "error", error: msg.message });
-      cleanupWS();
       nativePort = null;
     }
   });
@@ -105,50 +90,10 @@ async function handleStart(config) {
       setState({ status: "error", error: `Native host: ${err}` });
     }
     nativePort = null;
-    cleanupWS();
   });
 
   nativePort.postMessage({ type: "start", config });
   L("Start sent to native host");
-}
-
-function connectWS(port, tabId, config) {
-  L(`Opening WS to ws://127.0.0.1:${port}`);
-
-  ws = new WebSocket(`ws://127.0.0.1:${port}`);
-  ws.binaryType = "arraybuffer";
-
-  ws.onopen = () => {
-    L("WS connected → telling content script to capture");
-    setState({ status: "capturing", frame: 0 });
-    browser.tabs.sendMessage(tabId, { action: "start_capture", config });
-    L("Content script notified");
-  };
-
-  ws.onmessage = (ev) => {
-    if (typeof ev.data !== "string") return;
-    try {
-      const msg = JSON.parse(ev.data);
-      if (msg.type === "ack" && framePort) {
-        framePort.postMessage({ type: "ack" });
-      }
-    } catch (_) {}
-  };
-
-  ws.onerror = () => {
-    L("WS error");
-    setState({ status: "error", error: "WebSocket failed in background" });
-    if (nativePort) { try { nativePort.disconnect(); } catch (_) {} nativePort = null; }
-  };
-
-  ws.onclose = () => {
-    L("WS closed");
-    ws = null;
-  };
-}
-
-function cleanupWS() {
-  if (ws) { try { ws.close(); } catch (_) {} ws = null; }
 }
 
 function handleStop() {
