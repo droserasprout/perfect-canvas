@@ -17,7 +17,7 @@ make install  # Run native/install.sh to register the native messaging host with
 
 **Prerequisites**: Firefox, Python 3.10+ with `websockets` package, `ffmpeg` in PATH.
 
-**Native host logs**: `~/.local/share/perfect-canvas/host.log`
+**Logs**: `~/.cache/perfect-canvas/host.log` (host), `~/.cache/perfect-canvas/profile-<ts>.log` (per-frame profile)
 
 No test suite or linter is configured.
 
