@@ -2,6 +2,7 @@
 """Perfect Canvas — native messaging host with websockets + FFmpeg."""
 
 import asyncio
+import csv
 import json
 import logging
 import os
@@ -9,6 +10,7 @@ import shutil
 import struct
 import sys
 import threading
+import time
 from pathlib import Path
 
 try:
@@ -98,6 +100,29 @@ def build_ffmpeg_cmd(ffmpeg_bin, width, height, fps, codec, crf, preset, output,
     cmd.append(output)
     return cmd
 
+# ─── Profile log ──────────────────────────────────────────────────────────────
+
+PROFILE_COLS = ["frame", "raf_ms", "cb_ms", "gpu_ms", "send_ms", "pending", "ack_rtt_ms"]
+
+def write_profile_log(rows):
+    ts = time.strftime("%Y%m%d-%H%M%S")
+    path = Path(f"/tmp/perfect-canvas-{ts}.log")
+    with path.open("w", newline="") as f:
+        w = csv.writer(f, delimiter="\t")
+        w.writerow(PROFILE_COLS)
+        for row in rows:
+            ack = row.get("ack_rtt_ms")
+            w.writerow([
+                row.get("frame"),
+                f"{row.get('raf_ms', 0):.2f}",
+                f"{row.get('cb_ms', 0):.2f}",
+                f"{row.get('gpu_ms', 0):.2f}",
+                f"{row.get('send_ms', 0):.2f}",
+                row.get("pending", ""),
+                f"{ack:.2f}" if ack is not None else "",
+            ])
+    log.info("Profile written to %s (%d rows)", path, len(rows))
+
 # ─── WebSocket handler ───────────────────────────────────────────────────────
 
 async def handle_ws(websocket, config, done_event):
@@ -142,6 +167,12 @@ async def handle_ws(websocket, config, done_event):
 
                 elif msg["type"] == "done":
                     log.info("Done signal, frames=%s", msg.get("frames"))
+                    profile = msg.get("profile")
+                    if profile:
+                        try:
+                            write_profile_log(profile)
+                        except Exception:
+                            log.exception("Profile write failed")
                     break
 
             elif isinstance(message, bytes):

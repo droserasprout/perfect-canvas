@@ -67,7 +67,9 @@ window.addEventListener("message", (e) => {
     // on an ArrayBuffer in the same process goes straight to the socket.
     ws.send(e.data.payload);
   } else if (e.data.type === "__pc_done") {
-    ws.send(JSON.stringify({ type: "done", frames: e.data.frames }));
+    const doneMsg = { type: "done", frames: e.data.frames };
+    if (e.data.profile) doneMsg.profile = e.data.profile;
+    ws.send(JSON.stringify(doneMsg));
     browser.runtime.sendMessage({
       type: "capture_metrics",
       elapsedMs: e.data.elapsedMs,

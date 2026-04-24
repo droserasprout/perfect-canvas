@@ -20,6 +20,10 @@
   const MAX_IN_FLIGHT = 4;
   const pending = [];
 
+  let profileEnabled = false;
+  const profileRows = [];   // per-frame timings, push order = frame order
+  const ackRtt = {};        // frameNo → ms from postMessage to ACK
+
   let originalCanvas = {
     width: 0,
     height: 0,
@@ -213,7 +217,7 @@
     return buf;
   }
 
-  async function sendFrame(buf) {
+  async function sendFrame(buf, frameNo) {
     // Block until the pipeline has a free slot (FIFO on oldest pending ACK)
     while (capturing && pending.length >= MAX_IN_FLIGHT) {
       await pending[0].promise;
@@ -222,14 +226,19 @@
 
     let resolve;
     const promise = new Promise((r) => { resolve = r; });
-    pending.push({ resolve, promise });
+    const enqueuedAt = profileEnabled ? origPerfNow() : 0;
+    pending.push({ resolve, promise, frameNo, enqueuedAt });
 
     window.postMessage({ type: "__pc_frame", payload: buf }, "*", [buf]);
   }
 
   function onAck() {
     const entry = pending.shift();
-    if (entry) entry.resolve();
+    if (!entry) return;
+    if (profileEnabled && entry.frameNo) {
+      ackRtt[entry.frameNo] = origPerfNow() - entry.enqueuedAt;
+    }
+    entry.resolve();
   }
 
   function drainPending() {
@@ -297,8 +306,10 @@
       // Async PBO pipeline: each iter renders frame K+1, issues its readback,
       // then waits on the prior fence (frame K) and emits. One frame of latency.
       while (capturing && frameCount < totalFrames - 1) {
+        const tIterStart = profileEnabled ? origPerfNow() : 0;
         await new Promise((resolve) => origRAF(resolve));
         if (!capturing) break;
+        const tAfterRaf = profileEnabled ? origPerfNow() : 0;
 
         fakeTime += frameDuration;
         if (frameCallbacks.length) {
@@ -308,13 +319,29 @@
           }
         }
         if (!capturing) break;
+        const tAfterCb = profileEnabled ? origPerfNow() : 0;
 
         const pboNext = pboCur === pboA ? pboB : pboA;
         const fenceNext = issuePixelRead(gl, pboNext, encW, encH);
 
         const data = waitPBOData(gl, pboCur, fenceCur, encW, encH);
-        await sendFrame(data.buffer);
+        const tAfterGpu = profileEnabled ? origPerfNow() : 0;
+        const pendingPre = pending.length;
+        const frameNo = frameCount + 1;
+        await sendFrame(data.buffer, frameNo);
+        const tAfterSend = profileEnabled ? origPerfNow() : 0;
         frameCount++;
+
+        if (profileEnabled) {
+          profileRows.push({
+            frame: frameNo,
+            raf_ms: tAfterRaf - tIterStart,
+            cb_ms: tAfterCb - tAfterRaf,
+            gpu_ms: tAfterGpu - tAfterCb,
+            send_ms: tAfterSend - tAfterGpu,
+            pending: pendingPre,
+          });
+        }
 
         pboCur = pboNext;
         fenceCur = fenceNext;
@@ -325,9 +352,23 @@
 
       // Drain the last in-flight frame
       if (capturing && frameCount < totalFrames && fenceCur) {
+        const tAfterCb = profileEnabled ? origPerfNow() : 0;
         const data = waitPBOData(gl, pboCur, fenceCur, encW, encH);
-        await sendFrame(data.buffer);
+        const tAfterGpu = profileEnabled ? origPerfNow() : 0;
+        const pendingPre = pending.length;
+        const frameNo = frameCount + 1;
+        await sendFrame(data.buffer, frameNo);
+        const tAfterSend = profileEnabled ? origPerfNow() : 0;
         frameCount++;
+        if (profileEnabled) {
+          profileRows.push({
+            frame: frameNo,
+            raf_ms: 0, cb_ms: 0,
+            gpu_ms: tAfterGpu - tAfterCb,
+            send_ms: tAfterSend - tAfterGpu,
+            pending: pendingPre,
+          });
+        }
         reportProgress();
       } else if (fenceCur) {
         gl.deleteSync(fenceCur);
@@ -338,14 +379,16 @@
     } else {
       // Sync fallback: WebGL1 or Canvas2D
       const firstRead = readPixels(canvas, gl, encW, encH);
-      await sendFrame(firstRead.data.buffer);
+      await sendFrame(firstRead.data.buffer, 1);
       frameCount = 1;
       console.log("[PC] First frame sent (sync)");
       reportProgress();
 
       while (capturing && frameCount < totalFrames) {
+        const tIterStart = profileEnabled ? origPerfNow() : 0;
         await new Promise((resolve) => origRAF(resolve));
         if (!capturing) break;
+        const tAfterRaf = profileEnabled ? origPerfNow() : 0;
 
         fakeTime += frameDuration;
         if (frameCallbacks.length) {
@@ -355,10 +398,26 @@
           }
         }
         if (!capturing) break;
+        const tAfterCb = profileEnabled ? origPerfNow() : 0;
 
         const { data } = readPixels(canvas, gl, encW, encH);
-        await sendFrame(data.buffer);
+        const tAfterGpu = profileEnabled ? origPerfNow() : 0;
+        const pendingPre = pending.length;
+        const frameNo = frameCount + 1;
+        await sendFrame(data.buffer, frameNo);
+        const tAfterSend = profileEnabled ? origPerfNow() : 0;
         frameCount++;
+
+        if (profileEnabled) {
+          profileRows.push({
+            frame: frameNo,
+            raf_ms: tAfterRaf - tIterStart,
+            cb_ms: tAfterCb - tAfterRaf,
+            gpu_ms: tAfterGpu - tAfterCb,
+            send_ms: tAfterSend - tAfterGpu,
+            pending: pendingPre,
+          });
+        }
 
         if (frameCount % 10 === 0) reportProgress();
         if (frameCount % 30 === 0) await new Promise((r) => setTimeout(r, 0));
@@ -413,6 +472,9 @@
     totalFrames = duration > 0 ? Math.round(duration * fps) : Infinity;
     frameCount = 0;
     fakeTime = origPerfNow();
+    profileEnabled = !!config.profile;
+    profileRows.length = 0;
+    for (const k of Object.keys(ackRtt)) delete ackRtt[k];
 
     window.requestAnimationFrame = patchedRAF;
     window.cancelAnimationFrame = patchedCAF;
@@ -488,12 +550,21 @@
       `${actualFps.toFixed(1)} fps (${ratio.toFixed(2)}× target ${targetFps.toFixed(0)} fps)`
     );
 
+    let profile = null;
+    if (profileEnabled && profileRows.length) {
+      for (const row of profileRows) {
+        row.ack_rtt_ms = ackRtt[row.frame] !== undefined ? ackRtt[row.frame] : null;
+      }
+      profile = profileRows.slice();
+    }
+
     window.postMessage({
       type: "__pc_done",
       frames: frameCount,
       elapsedMs,
       actualFps,
       targetFps,
+      profile,
     }, "*");
     console.log(`[PC] Capture stopped at frame ${frameCount}`);
     captureStartTs = 0;

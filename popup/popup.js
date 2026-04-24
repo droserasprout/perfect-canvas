@@ -17,6 +17,7 @@ const PERSISTED_FIELDS = [
   "duration",
   "quality",
   "speed",
+  "profile",
   "output",
 ];
 
@@ -53,9 +54,8 @@ function saveSettings() {
   const settings = {};
   for (const id of PERSISTED_FIELDS) {
     const el = $(id);
-    if (el) {
-      settings[id] = el.value;
-    }
+    if (!el) continue;
+    settings[id] = el.type === "checkbox" ? el.checked : el.value;
   }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
 }
@@ -68,9 +68,9 @@ function loadSettings() {
     const settings = JSON.parse(raw);
     for (const id of PERSISTED_FIELDS) {
       const el = $(id);
-      if (el && settings[id] !== undefined) {
-        el.value = settings[id];
-      }
+      if (!el || settings[id] === undefined) continue;
+      if (el.type === "checkbox") el.checked = !!settings[id];
+      else el.value = settings[id];
     }
   } catch (e) {
     console.warn("[CC popup] Failed to load settings:", e);
@@ -165,6 +165,7 @@ function getConfig() {
     preset: preset,
     output: output,
     upscale: upscaleVal !== "none" ? upscaleVal : null,
+    profile: $("profile").checked,
   };
 }
 
