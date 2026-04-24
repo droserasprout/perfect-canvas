@@ -18,6 +18,7 @@ const PERSISTED_FIELDS = [
   "quality",
   "speed",
   "codec",
+  "hide-preview",
   "profile",
   "output",
 ];
@@ -166,6 +167,7 @@ function getConfig() {
     preset: preset,
     output: output,
     upscale: upscaleVal !== "none" ? upscaleVal : null,
+    hidePreview: $("hide-preview").checked,
     profile: $("profile").checked,
   };
 }
