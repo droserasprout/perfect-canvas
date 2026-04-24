@@ -17,6 +17,7 @@ const PERSISTED_FIELDS = [
   "duration",
   "quality",
   "speed",
+  "codec",
   "profile",
   "output",
 ];
@@ -160,7 +161,7 @@ function getConfig() {
     height: parseInt(heightInput.value) || 0,
     fps: parseInt($("fps").value),
     duration: parseInt($("duration").value),
-    codec: "libx264",
+    codec: $("codec").value,
     crf: crf,
     preset: preset,
     output: output,

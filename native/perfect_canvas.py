@@ -68,14 +68,22 @@ def find_ffmpeg():
             return p
     return None
 
+VAAPI_DEVICE = os.environ.get("PC_VAAPI_DEVICE", "/dev/dri/renderD128")
+
 def build_ffmpeg_cmd(ffmpeg_bin, width, height, fps, codec, crf, preset, output, vflip, upscale=None):
-    cmd = [
-        ffmpeg_bin, "-y", "-loglevel", "warning",
+    cmd = [ffmpeg_bin, "-y", "-loglevel", "warning"]
+
+    # VAAPI needs the device declared before the input.
+    if codec == "h264_vaapi":
+        cmd += ["-vaapi_device", VAAPI_DEVICE]
+
+    cmd += [
         "-f", "rawvideo", "-pixel_format", "rgba",
         "-video_size", f"{width}x{height}",
         "-framerate", str(fps),
         "-i", "pipe:0",
     ]
+
     vf = []
     if vflip:
         vf.append("vflip")
@@ -86,6 +94,10 @@ def build_ffmpeg_cmd(ffmpeg_bin, width, height, fps, codec, crf, preset, output,
     if codec == "libx264":
         cmd += ["-c:v", "libx264", "-crf", str(crf), "-preset", preset,
                 "-pix_fmt", "yuv420p"]
+    elif codec == "h264_vaapi":
+        # CPU-side filters first (vflip/scale), then hand to GPU via hwupload.
+        vf += ["format=nv12", "hwupload"]
+        cmd += ["-c:v", "h264_vaapi", "-qp", str(crf)]
     elif codec == "prores":
         cmd += ["-c:v", "prores_ks", "-profile:v", "3",
                 "-pix_fmt", "yuv422p10le"]
