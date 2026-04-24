@@ -16,9 +16,8 @@
 
   // Bounded in-flight pipeline. Producer blocks only when this many frames
   // are unacked; hides per-frame round-trip latency while keeping memory
-  // bounded (N × frame size). At 1080p RGBA, 8 × 8MB = 64MB ceiling.
-  // Now that the IPC ceiling is gone, this is the consumer-cap knob.
-  const MAX_IN_FLIGHT = 8;
+  // bounded (N × frame size). At 1080p RGBA, 4 × 8MB = 32MB ceiling.
+  const MAX_IN_FLIGHT = 4;
   const pending = [];
 
   let profileEnabled = false;
