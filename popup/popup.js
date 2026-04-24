@@ -177,9 +177,18 @@ function updateUI(s) {
       statusEl.textContent = "⏳ Finalizing...";
       btnStart.disabled = true;
       break;
-    case "done":
-      statusEl.textContent = `✅ Done: ${s.frames} frames\n${s.output}`;
+    case "done": {
+      let line = `✅ Done: ${s.frames} frames`;
+      if (s.actualFps && s.targetFps) {
+        const ratio = s.actualFps / s.targetFps;
+        line += ` · ${s.actualFps.toFixed(1)} fps (${ratio.toFixed(2)}× target)`;
+      }
+      if (s.elapsedMs) {
+        line += ` in ${(s.elapsedMs / 1000).toFixed(2)}s`;
+      }
+      statusEl.textContent = `${line}\n${s.output}`;
       break;
+    }
     case "error":
       statusEl.textContent = `❌ ${s.message}`;
       break;

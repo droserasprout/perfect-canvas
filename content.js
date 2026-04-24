@@ -30,7 +30,13 @@ window.addEventListener("message", (e) => {
     // ACK to inject.js: "I've forwarded your frame, send the next one"
     window.postMessage({ type: "__pc_ack" }, "*");
   } else if (e.data.type === "__pc_done") {
-    if (framePort) framePort.postMessage({ type: "done", frames: e.data.frames });
+    if (framePort) framePort.postMessage({
+      type: "done",
+      frames: e.data.frames,
+      elapsedMs: e.data.elapsedMs,
+      actualFps: e.data.actualFps,
+      targetFps: e.data.targetFps,
+    });
     browser.runtime.sendMessage({ type: "capture_ended" });
   } else if (e.data.type === "__pc_progress") {
     if (framePort) framePort.postMessage({ type: "progress", frame: e.data.frame, total: e.data.total });

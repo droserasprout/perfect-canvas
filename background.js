@@ -49,6 +49,11 @@ browser.runtime.onConnect.addListener((port) => {
         ws.send(msg.data);
       } else if (msg.type === "done") {
         ws.send(JSON.stringify({ type: "done", frames: msg.frames }));
+        setState({
+          elapsedMs: msg.elapsedMs,
+          actualFps: msg.actualFps,
+          targetFps: msg.targetFps,
+        });
       } else if (msg.type === "progress") {
         setState({ frame: msg.frame, total: msg.total });
       }

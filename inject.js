@@ -13,6 +13,7 @@
   let fakeTime = 0;
   let frameDuration = 0;
   let ackResolve = null;
+  let captureStartTs = 0;
 
   let originalCanvas = {
     width: 0,
@@ -248,6 +249,7 @@
 
     await new Promise((r) => setTimeout(r, 150));
 
+    captureStartTs = origPerfNow();
     await sendFrame(firstRead.data.buffer.slice(0));
     frameCount = 1;
     console.log("[PC] First frame sent");
@@ -386,8 +388,24 @@
       targetCanvas = null;
     }
 
-    window.postMessage({ type: "__pc_done", frames: frameCount }, "*");
+    const elapsedMs = captureStartTs ? origPerfNow() - captureStartTs : 0;
+    const targetFps = frameDuration > 0 ? 1000 / frameDuration : 0;
+    const actualFps = elapsedMs > 0 ? (frameCount * 1000) / elapsedMs : 0;
+    const ratio = targetFps > 0 ? actualFps / targetFps : 0;
+    console.log(
+      `[PC] Captured ${frameCount} frames in ${(elapsedMs / 1000).toFixed(2)} s → ` +
+      `${actualFps.toFixed(1)} fps (${ratio.toFixed(2)}× target ${targetFps.toFixed(0)} fps)`
+    );
+
+    window.postMessage({
+      type: "__pc_done",
+      frames: frameCount,
+      elapsedMs,
+      actualFps,
+      targetFps,
+    }, "*");
     console.log(`[PC] Capture stopped at frame ${frameCount}`);
+    captureStartTs = 0;
   }
 
   window.addEventListener("message", (e) => {
