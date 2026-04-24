@@ -44,7 +44,7 @@ sh ./install.sh
 
 - [ ] Publish on AMO
 - [ ] Bug: FPS affects speed, probably in Strudel only
-- [ ] Progress bar and rendering speed in frames in popup UI
+- [ ] Progress bar in popup UI (rendering speed after capture is already shown)
 - [ ] Timeout of no frames were received after some time. Currently just hangs untill reload
 - [ ] Fix Strudel support; addon doesn't slow down rendering
 - [ ] Option to select canvas if multiple are present
