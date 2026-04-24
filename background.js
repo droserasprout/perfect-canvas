@@ -5,6 +5,7 @@ const L = (...a) => console.log("[CC bg]", ...a);
 let state = { status: "idle" };
 let popupPort = null;
 let nativePort = null;
+let framePort = null;
 let ws = null;
 
 function setState(s) {
@@ -36,6 +37,7 @@ browser.runtime.onConnect.addListener((port) => {
 
   if (port.name === "frames") {
     L("Frame port connected");
+    framePort = port;
 
     port.onMessage.addListener((msg) => {
       if (!ws || ws.readyState !== WebSocket.OPEN) {
@@ -59,7 +61,10 @@ browser.runtime.onConnect.addListener((port) => {
       }
     });
 
-    port.onDisconnect.addListener(() => L("Frame port disconnected"));
+    port.onDisconnect.addListener(() => {
+      if (framePort === port) framePort = null;
+      L("Frame port disconnected");
+    });
   }
 });
 
@@ -118,6 +123,16 @@ function connectWS(port, tabId, config) {
     setState({ status: "capturing", frame: 0 });
     browser.tabs.sendMessage(tabId, { action: "start_capture", config });
     L("Content script notified");
+  };
+
+  ws.onmessage = (ev) => {
+    if (typeof ev.data !== "string") return;
+    try {
+      const msg = JSON.parse(ev.data);
+      if (msg.type === "ack" && framePort) {
+        framePort.postMessage({ type: "ack" });
+      }
+    } catch (_) {}
   };
 
   ws.onerror = () => {

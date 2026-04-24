@@ -13,6 +13,9 @@ browser.runtime.onMessage.addListener((msg) => {
     }
     if (framePort) framePort.disconnect();
     framePort = browser.runtime.connect({ name: "frames" });
+    framePort.onMessage.addListener((m) => {
+      if (m.type === "ack") window.postMessage({ type: "__pc_ack" }, "*");
+    });
     console.log("[CC content] Frame port opened, injecting capture script");
     injectCaptureScript(msg.config);
   } else if (msg.action === "stop_capture") {
@@ -27,8 +30,7 @@ window.addEventListener("message", (e) => {
     if (framePort) framePort.postMessage({ type: "meta", meta: e.data.meta });
   } else if (e.data.type === "__pc_frame") {
     if (framePort) framePort.postMessage({ type: "frame", data: e.data.payload });
-    // ACK to inject.js: "I've forwarded your frame, send the next one"
-    window.postMessage({ type: "__pc_ack" }, "*");
+    // ACK arrives from the Python host once FFmpeg has drained this frame.
   } else if (e.data.type === "__pc_done") {
     if (framePort) framePort.postMessage({
       type: "done",

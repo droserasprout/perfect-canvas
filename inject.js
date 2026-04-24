@@ -185,6 +185,29 @@
     return { data: new Uint8Array(imageData.data.buffer), webgl: false, actualWidth: width, actualHeight: height };
   }
 
+  // WebGL2 async readback: issues readPixels into a PBO and returns a fence.
+  // The caller waits on the fence one frame later and then getBufferSubData to retrieve.
+  function issuePixelRead(gl, pbo, w, h) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pbo);
+    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, 0);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    return gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+  }
+
+  function waitPBOData(gl, pbo, fence, w, h) {
+    // Fence should already be signaled (waited one frame). Blocking wait with
+    // SYNC_FLUSH_COMMANDS_BIT handles the rare case where it isn't.
+    gl.clientWaitSync(fence, gl.SYNC_FLUSH_COMMANDS_BIT, 1_000_000_000);
+    gl.deleteSync(fence);
+
+    const buf = new Uint8Array(w * h * 4);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pbo);
+    gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, buf);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    return buf;
+  }
+
   function waitForAck() {
     return new Promise((resolve) => {
       ackResolve = resolve;
@@ -224,8 +247,24 @@
     encH = encH - (encH % 2);
     console.log(`[PC] Encoding at: ${encW}×${encH} (even-aligned)`);
 
-    console.log("[PC] Reading first frame...");
-    const firstRead = readPixels(canvas, gl, encW, encH);
+    const isWebGL2 = !!(gl && typeof gl.fenceSync === "function");
+
+    let pboA = null, pboB = null, pboCur = null, fenceCur = null;
+    if (isWebGL2) {
+      pboA = gl.createBuffer();
+      pboB = gl.createBuffer();
+      const size = encW * encH * 4;
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pboA);
+      gl.bufferData(gl.PIXEL_PACK_BUFFER, size, gl.STREAM_READ);
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pboB);
+      gl.bufferData(gl.PIXEL_PACK_BUFFER, size, gl.STREAM_READ);
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+      console.log("[PC] WebGL2 async PBO readback enabled");
+
+      // Pre-loop: issue first read (scene 0). Emitted in iter 1 below.
+      pboCur = pboA;
+      fenceCur = issuePixelRead(gl, pboCur, encW, encH);
+    }
 
     window.postMessage({
       type: "__pc_meta",
@@ -234,38 +273,84 @@
         width: encW,
         height: encH,
         fps: 1000 / frameDuration,
-        webgl: firstRead.webgl,
+        webgl: !!gl,
       },
     }, "*");
 
     await new Promise((r) => setTimeout(r, 150));
 
     captureStartTs = origPerfNow();
-    await sendFrame(firstRead.data.buffer);
-    frameCount = 1;
-    console.log("[PC] First frame sent");
-    reportProgress();
 
-    while (capturing && frameCount < totalFrames) {
-      await new Promise((resolve) => origRAF(resolve));
-      if (!capturing) break;
+    if (isWebGL2) {
+      // Async PBO pipeline: each iter renders frame K+1, issues its readback,
+      // then waits on the prior fence (frame K) and emits. One frame of latency.
+      while (capturing && frameCount < totalFrames - 1) {
+        await new Promise((resolve) => origRAF(resolve));
+        if (!capturing) break;
 
-      fakeTime += frameDuration;
-      if (frameCallbacks.length) {
-        const callbacks = frameCallbacks.splice(0);
-        for (const { cb } of callbacks) {
-          try { cb(fakeTime); } catch (e) { console.error("[PC] callback error:", e); }
+        fakeTime += frameDuration;
+        if (frameCallbacks.length) {
+          const callbacks = frameCallbacks.splice(0);
+          for (const { cb } of callbacks) {
+            try { cb(fakeTime); } catch (e) { console.error("[PC] callback error:", e); }
+          }
         }
+        if (!capturing) break;
+
+        const pboNext = pboCur === pboA ? pboB : pboA;
+        const fenceNext = issuePixelRead(gl, pboNext, encW, encH);
+
+        const data = waitPBOData(gl, pboCur, fenceCur, encW, encH);
+        await sendFrame(data.buffer);
+        frameCount++;
+
+        pboCur = pboNext;
+        fenceCur = fenceNext;
+
+        if (frameCount % 10 === 0) reportProgress();
+        if (frameCount % 30 === 0) await new Promise((r) => setTimeout(r, 0));
       }
 
-      if (!capturing) break;
+      // Drain the last in-flight frame
+      if (capturing && frameCount < totalFrames && fenceCur) {
+        const data = waitPBOData(gl, pboCur, fenceCur, encW, encH);
+        await sendFrame(data.buffer);
+        frameCount++;
+        reportProgress();
+      } else if (fenceCur) {
+        gl.deleteSync(fenceCur);
+      }
 
-      const { data } = readPixels(canvas, gl, encW, encH);
-      await sendFrame(data.buffer);
-      frameCount++;
+      gl.deleteBuffer(pboA);
+      gl.deleteBuffer(pboB);
+    } else {
+      // Sync fallback: WebGL1 or Canvas2D
+      const firstRead = readPixels(canvas, gl, encW, encH);
+      await sendFrame(firstRead.data.buffer);
+      frameCount = 1;
+      console.log("[PC] First frame sent (sync)");
+      reportProgress();
 
-      if (frameCount % 10 === 0) reportProgress();
-      if (frameCount % 30 === 0) await new Promise((r) => setTimeout(r, 0));
+      while (capturing && frameCount < totalFrames) {
+        await new Promise((resolve) => origRAF(resolve));
+        if (!capturing) break;
+
+        fakeTime += frameDuration;
+        if (frameCallbacks.length) {
+          const callbacks = frameCallbacks.splice(0);
+          for (const { cb } of callbacks) {
+            try { cb(fakeTime); } catch (e) { console.error("[PC] callback error:", e); }
+          }
+        }
+        if (!capturing) break;
+
+        const { data } = readPixels(canvas, gl, encW, encH);
+        await sendFrame(data.buffer);
+        frameCount++;
+
+        if (frameCount % 10 === 0) reportProgress();
+        if (frameCount % 30 === 0) await new Promise((r) => setTimeout(r, 0));
+      }
     }
 
     stopCapture();

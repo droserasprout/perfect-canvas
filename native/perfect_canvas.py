@@ -150,6 +150,10 @@ async def handle_ws(websocket, config, done_event):
                     frame_count += 1
                     if frame_count % 60 == 0:
                         log.info("Frame %d (%d bytes)", frame_count, len(message))
+                    try:
+                        await websocket.send(json.dumps({"type": "ack"}))
+                    except websockets.exceptions.ConnectionClosed:
+                        pass
 
     except websockets.exceptions.ConnectionClosed as e:
         log.warning("WS closed at frame %d: %s", frame_count, e)
