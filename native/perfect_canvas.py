@@ -222,6 +222,19 @@ async def handle_ws(websocket, config, done_event):
 
     log.info("ffmpeg: %s → %s", ffmpeg_bin, output)
 
+    stderr_chunks: list[bytes] = []
+    stderr_task: asyncio.Task | None = None
+    exit_task: asyncio.Task | None = None
+    ffmpeg_failed = False
+
+    async def drain_stderr(proc):
+        assert proc.stderr is not None
+        while True:
+            chunk = await proc.stderr.read(4096)
+            if not chunk:
+                break
+            stderr_chunks.append(chunk)
+
     try:
         async for message in websocket:
             if isinstance(message, str):
@@ -247,6 +260,8 @@ async def handle_ws(websocket, config, done_event):
                         stderr=asyncio.subprocess.PIPE,
                     )
                     log.info("FFmpeg pid=%d", ffmpeg_proc.pid)
+                    stderr_task = asyncio.create_task(drain_stderr(ffmpeg_proc))
+                    exit_task = asyncio.create_task(ffmpeg_proc.wait())
 
                 elif msg["type"] == "done":
                     log.info("Done signal, frames=%s", msg.get("frames"))
@@ -259,16 +274,24 @@ async def handle_ws(websocket, config, done_event):
                     break
 
             elif isinstance(message, bytes):
-                if ffmpeg_proc and ffmpeg_proc.stdin and not ffmpeg_proc.stdin.is_closing():
+                if not ffmpeg_proc or not ffmpeg_proc.stdin:
+                    continue
+                if ffmpeg_proc.returncode is not None:
+                    ffmpeg_failed = True
+                    break
+                try:
                     ffmpeg_proc.stdin.write(message)
                     await ffmpeg_proc.stdin.drain()
-                    frame_count += 1
-                    if frame_count % 60 == 0:
-                        log.info("Frame %d (%d bytes)", frame_count, len(message))
-                    try:
-                        await websocket.send(json.dumps({"type": "ack"}))
-                    except websockets.exceptions.ConnectionClosed:
-                        pass
+                except (BrokenPipeError, ConnectionResetError):
+                    ffmpeg_failed = True
+                    break
+                frame_count += 1
+                if frame_count % 60 == 0:
+                    log.info("Frame %d (%d bytes)", frame_count, len(message))
+                try:
+                    await websocket.send(json.dumps({"type": "ack"}))
+                except websockets.exceptions.ConnectionClosed:
+                    pass
 
     except websockets.exceptions.ConnectionClosed as e:
         log.warning("WS closed at frame %d: %s", frame_count, e)
@@ -281,11 +304,31 @@ async def handle_ws(websocket, config, done_event):
         try:
             if ffmpeg_proc.stdin and not ffmpeg_proc.stdin.is_closing():
                 ffmpeg_proc.stdin.close()
-            await asyncio.wait_for(ffmpeg_proc.wait(), timeout=30)
-            stderr_tail = (await ffmpeg_proc.stderr.read()).decode(errors="replace")[-500:]
+            if exit_task is not None:
+                await asyncio.wait_for(exit_task, timeout=30)
+            else:
+                await asyncio.wait_for(ffmpeg_proc.wait(), timeout=30)
+            if stderr_task is not None:
+                try:
+                    await asyncio.wait_for(stderr_task, timeout=5)
+                except asyncio.TimeoutError:
+                    stderr_task.cancel()
+            stderr_tail = b"".join(stderr_chunks).decode(errors="replace")[-500:]
             log.info("FFmpeg exit=%d stderr: %s", ffmpeg_proc.returncode, stderr_tail)
         except Exception:
             log.exception("FFmpeg close error")
+
+    if ffmpeg_failed:
+        msg_text = (f"FFmpeg exited early (code={ffmpeg_proc.returncode if ffmpeg_proc else '?'}): "
+                    f"{stderr_tail}")
+        log.error(msg_text)
+        nm_send({"type": "error", "message": msg_text})
+        try:
+            await websocket.close()
+        except Exception:
+            pass
+        done_event.set()
+        return
 
     nm_send({
         "type": "done",
