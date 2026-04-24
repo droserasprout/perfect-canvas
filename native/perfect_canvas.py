@@ -66,7 +66,7 @@ def find_ffmpeg():
             return p
     return None
 
-def build_ffmpeg_cmd(ffmpeg_bin, width, height, fps, codec, crf, output, vflip, upscale=None):
+def build_ffmpeg_cmd(ffmpeg_bin, width, height, fps, codec, crf, preset, output, vflip, upscale=None):
     cmd = [
         ffmpeg_bin, "-y", "-loglevel", "warning",
         "-f", "rawvideo", "-pixel_format", "rgba",
@@ -82,7 +82,7 @@ def build_ffmpeg_cmd(ffmpeg_bin, width, height, fps, codec, crf, output, vflip, 
         vf.append(f"scale={uw}:{uh}:flags=lanczos")
 
     if codec == "libx264":
-        cmd += ["-c:v", "libx264", "-crf", str(crf), "-preset", "medium",
+        cmd += ["-c:v", "libx264", "-crf", str(crf), "-preset", preset,
                 "-pix_fmt", "yuv420p"]
     elif codec == "prores":
         cmd += ["-c:v", "prores_ks", "-profile:v", "3",
@@ -127,6 +127,7 @@ async def handle_ws(websocket, config, done_event):
                         msg["width"], msg["height"], msg["fps"],
                         config.get("codec", "libx264"),
                         config.get("crf", 18),
+                        config.get("preset", "veryfast"),
                         output,
                         vflip=msg.get("webgl", False),
                         upscale=config.get("upscale"),
@@ -150,6 +151,10 @@ async def handle_ws(websocket, config, done_event):
                     frame_count += 1
                     if frame_count % 60 == 0:
                         log.info("Frame %d (%d bytes)", frame_count, len(message))
+                    try:
+                        await websocket.send(json.dumps({"type": "ack"}))
+                    except websockets.exceptions.ConnectionClosed:
+                        pass
 
     except websockets.exceptions.ConnectionClosed as e:
         log.warning("WS closed at frame %d: %s", frame_count, e)

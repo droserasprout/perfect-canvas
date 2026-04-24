@@ -12,7 +12,13 @@
   let totalFrames = 0;
   let fakeTime = 0;
   let frameDuration = 0;
-  let ackResolve = null;
+  let captureStartTs = 0;
+
+  // Bounded in-flight pipeline. Producer blocks only when this many frames
+  // are unacked; hides per-frame round-trip latency while keeping memory
+  // bounded (N × frame size). At 1080p RGBA, 4 × 8MB = 32MB ceiling.
+  const MAX_IN_FLIGHT = 4;
+  const pending = [];
 
   let originalCanvas = {
     width: 0,
@@ -41,7 +47,7 @@
 
   function patchedCAF(id) {
     frameCallbacks = frameCallbacks.filter((f) => f.id !== id);
-    origCAF(id);
+    if (!capturing) origCAF(id);
   }
 
   function findCanvas() {
@@ -166,22 +172,13 @@
     window.dispatchEvent(new Event("resize"));
   }
 
-  function readPixels(canvas, width, height) {
-    let gl = null;
-    try { gl = canvas.getContext("webgl2"); } catch (_) {}
-    if (!gl) try { gl = canvas.getContext("webgl"); } catch (_) {}
-
+  function readPixels(canvas, gl, width, height) {
     if (gl) {
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
-      const dbW = gl.drawingBufferWidth;
-      const dbH = gl.drawingBufferHeight;
-
       // Clamp to drawing buffer but use requested (even) size
-      const readW = Math.min(width, dbW);
-      const readH = Math.min(height, dbH);
-
-      console.log(`[PC] readPixels: target ${width}×${height}, drawingBuffer ${dbW}×${dbH}, reading ${readW}×${readH}`);
+      const readW = Math.min(width, gl.drawingBufferWidth);
+      const readH = Math.min(height, gl.drawingBufferHeight);
 
       const buf = new Uint8Array(readW * readH * 4);
       gl.readPixels(0, 0, readW, readH, gl.RGBA, gl.UNSIGNED_BYTE, buf);
@@ -193,23 +190,53 @@
     return { data: new Uint8Array(imageData.data.buffer), webgl: false, actualWidth: width, actualHeight: height };
   }
 
-  function waitForAck() {
-    return new Promise((resolve) => {
-      ackResolve = resolve;
-      // Safety timeout — if ACK is lost, don't hang forever
-      setTimeout(() => {
-        if (ackResolve === resolve) {
-          console.warn("[PC] ACK timeout, continuing");
-          ackResolve = null;
-          resolve();
-        }
-      }, 2000);
-    });
+  // WebGL2 async readback: issues readPixels into a PBO and returns a fence.
+  // The caller waits on the fence one frame later and then getBufferSubData to retrieve.
+  function issuePixelRead(gl, pbo, w, h) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pbo);
+    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, 0);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    return gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+  }
+
+  function waitPBOData(gl, pbo, fence, w, h) {
+    // Fence should already be signaled (waited one frame). Blocking wait with
+    // SYNC_FLUSH_COMMANDS_BIT handles the rare case where it isn't.
+    gl.clientWaitSync(fence, gl.SYNC_FLUSH_COMMANDS_BIT, 1_000_000_000);
+    gl.deleteSync(fence);
+
+    const buf = new Uint8Array(w * h * 4);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pbo);
+    gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, buf);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    return buf;
   }
 
   async function sendFrame(buf) {
+    // Block until the pipeline has a free slot (FIFO on oldest pending ACK)
+    while (capturing && pending.length >= MAX_IN_FLIGHT) {
+      await pending[0].promise;
+    }
+    if (!capturing) return;
+
+    let resolve;
+    const promise = new Promise((r) => { resolve = r; });
+    pending.push({ resolve, promise });
+
     window.postMessage({ type: "__pc_frame", payload: buf }, "*", [buf]);
-    await waitForAck();
+  }
+
+  function onAck() {
+    const entry = pending.shift();
+    if (entry) entry.resolve();
+  }
+
+  function drainPending() {
+    while (pending.length) {
+      const entry = pending.shift();
+      entry.resolve();
+    }
   }
 
   async function captureLoop(canvas, width, height) {
@@ -232,8 +259,24 @@
     encH = encH - (encH % 2);
     console.log(`[PC] Encoding at: ${encW}×${encH} (even-aligned)`);
 
-    console.log("[PC] Reading first frame...");
-    const firstRead = readPixels(canvas, encW, encH);
+    const isWebGL2 = !!(gl && typeof gl.fenceSync === "function");
+
+    let pboA = null, pboB = null, pboCur = null, fenceCur = null;
+    if (isWebGL2) {
+      pboA = gl.createBuffer();
+      pboB = gl.createBuffer();
+      const size = encW * encH * 4;
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pboA);
+      gl.bufferData(gl.PIXEL_PACK_BUFFER, size, gl.STREAM_READ);
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pboB);
+      gl.bufferData(gl.PIXEL_PACK_BUFFER, size, gl.STREAM_READ);
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+      console.log("[PC] WebGL2 async PBO readback enabled");
+
+      // Pre-loop: issue first read (scene 0). Emitted in iter 1 below.
+      pboCur = pboA;
+      fenceCur = issuePixelRead(gl, pboCur, encW, encH);
+    }
 
     window.postMessage({
       type: "__pc_meta",
@@ -242,35 +285,84 @@
         width: encW,
         height: encH,
         fps: 1000 / frameDuration,
-        webgl: firstRead.webgl,
+        webgl: !!gl,
       },
     }, "*");
 
     await new Promise((r) => setTimeout(r, 150));
 
-    await sendFrame(firstRead.data.buffer.slice(0));
-    frameCount = 1;
-    console.log("[PC] First frame sent");
-    reportProgress();
+    captureStartTs = origPerfNow();
 
-    while (capturing && frameCount < totalFrames) {
-      await new Promise((resolve) => origRAF(resolve));
-      if (!capturing) break;
+    if (isWebGL2) {
+      // Async PBO pipeline: each iter renders frame K+1, issues its readback,
+      // then waits on the prior fence (frame K) and emits. One frame of latency.
+      while (capturing && frameCount < totalFrames - 1) {
+        await new Promise((resolve) => origRAF(resolve));
+        if (!capturing) break;
 
-      const callbacks = frameCallbacks.splice(0);
-      fakeTime += frameDuration;
-      for (const { cb } of callbacks) {
-        try { cb(fakeTime); } catch (e) { console.error("[PC] callback error:", e); }
+        fakeTime += frameDuration;
+        if (frameCallbacks.length) {
+          const callbacks = frameCallbacks.splice(0);
+          for (const { cb } of callbacks) {
+            try { cb(fakeTime); } catch (e) { console.error("[PC] callback error:", e); }
+          }
+        }
+        if (!capturing) break;
+
+        const pboNext = pboCur === pboA ? pboB : pboA;
+        const fenceNext = issuePixelRead(gl, pboNext, encW, encH);
+
+        const data = waitPBOData(gl, pboCur, fenceCur, encW, encH);
+        await sendFrame(data.buffer);
+        frameCount++;
+
+        pboCur = pboNext;
+        fenceCur = fenceNext;
+
+        if (frameCount % 10 === 0) reportProgress();
+        if (frameCount % 30 === 0) await new Promise((r) => setTimeout(r, 0));
       }
 
-      if (!capturing) break;
+      // Drain the last in-flight frame
+      if (capturing && frameCount < totalFrames && fenceCur) {
+        const data = waitPBOData(gl, pboCur, fenceCur, encW, encH);
+        await sendFrame(data.buffer);
+        frameCount++;
+        reportProgress();
+      } else if (fenceCur) {
+        gl.deleteSync(fenceCur);
+      }
 
-      const { data } = readPixels(canvas, encW, encH);
-      await sendFrame(data.buffer.slice(0));
-      frameCount++;
+      gl.deleteBuffer(pboA);
+      gl.deleteBuffer(pboB);
+    } else {
+      // Sync fallback: WebGL1 or Canvas2D
+      const firstRead = readPixels(canvas, gl, encW, encH);
+      await sendFrame(firstRead.data.buffer);
+      frameCount = 1;
+      console.log("[PC] First frame sent (sync)");
+      reportProgress();
 
-      if (frameCount % 10 === 0) reportProgress();
-      if (frameCount % 30 === 0) await new Promise((r) => setTimeout(r, 0));
+      while (capturing && frameCount < totalFrames) {
+        await new Promise((resolve) => origRAF(resolve));
+        if (!capturing) break;
+
+        fakeTime += frameDuration;
+        if (frameCallbacks.length) {
+          const callbacks = frameCallbacks.splice(0);
+          for (const { cb } of callbacks) {
+            try { cb(fakeTime); } catch (e) { console.error("[PC] callback error:", e); }
+          }
+        }
+        if (!capturing) break;
+
+        const { data } = readPixels(canvas, gl, encW, encH);
+        await sendFrame(data.buffer);
+        frameCount++;
+
+        if (frameCount % 10 === 0) reportProgress();
+        if (frameCount % 30 === 0) await new Promise((r) => setTimeout(r, 0));
+      }
     }
 
     stopCapture();
@@ -335,6 +427,7 @@
   async function stopCapture() {
     if (!capturing) return;
     capturing = false;
+    drainPending();
 
     window.requestAnimationFrame = origRAF;
     window.cancelAnimationFrame = origCAF;
@@ -342,8 +435,8 @@
     performance.now = origPerfNow;
 
     // Re-queue orphaned callbacks so the app's render loop resumes
-    const pending = frameCallbacks.splice(0);
-    for (const { cb } of pending) {
+    const orphanedCallbacks = frameCallbacks.splice(0);
+    for (const { cb } of orphanedCallbacks) {
       origRAF(cb);
     }
 
@@ -386,8 +479,24 @@
       targetCanvas = null;
     }
 
-    window.postMessage({ type: "__pc_done", frames: frameCount }, "*");
+    const elapsedMs = captureStartTs ? origPerfNow() - captureStartTs : 0;
+    const targetFps = frameDuration > 0 ? 1000 / frameDuration : 0;
+    const actualFps = elapsedMs > 0 ? (frameCount * 1000) / elapsedMs : 0;
+    const ratio = targetFps > 0 ? actualFps / targetFps : 0;
+    console.log(
+      `[PC] Captured ${frameCount} frames in ${(elapsedMs / 1000).toFixed(2)} s → ` +
+      `${actualFps.toFixed(1)} fps (${ratio.toFixed(2)}× target ${targetFps.toFixed(0)} fps)`
+    );
+
+    window.postMessage({
+      type: "__pc_done",
+      frames: frameCount,
+      elapsedMs,
+      actualFps,
+      targetFps,
+    }, "*");
     console.log(`[PC] Capture stopped at frame ${frameCount}`);
+    captureStartTs = 0;
   }
 
   window.addEventListener("message", (e) => {
@@ -396,10 +505,8 @@
       if (e.data.action === "start") startCapture(e.data.config);
       if (e.data.action === "stop") stopCapture();
     }
-    if (e.data.type === "__pc_ack" && ackResolve) {
-      const r = ackResolve;
-      ackResolve = null;
-      r();
+    if (e.data.type === "__pc_ack") {
+      onAck();
     }
   });
 

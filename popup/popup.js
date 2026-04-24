@@ -16,6 +16,7 @@ const PERSISTED_FIELDS = [
   "fps",
   "duration",
   "quality",
+  "speed",
   "output",
 ];
 
@@ -26,6 +27,16 @@ const QUALITY_TO_CRF = {
   2: 18,  // High - visually lossless for most content
   3: 14,  // Ultra - overkill for most uses
   4: 0,   // Lossless (CRF 0)
+};
+
+// Speed slider → x264/x265 preset. Faster presets trade ~30-40% file size
+// for ~2-3× encoder throughput.
+const SPEED_TO_PRESET = {
+  0: "ultrafast",
+  1: "veryfast",
+  2: "fast",
+  3: "medium",
+  4: "slow",
 };
 
 let port = null;
@@ -141,6 +152,8 @@ function getConfig() {
   const upscaleVal = $("upscale").value;
   const quality = parseInt($("quality").value);
   const crf = QUALITY_TO_CRF[quality];
+  const speed = parseInt($("speed").value);
+  const preset = SPEED_TO_PRESET[speed];
 
   return {
     width: parseInt(widthInput.value) || 0,
@@ -149,6 +162,7 @@ function getConfig() {
     duration: parseInt($("duration").value),
     codec: "libx264",
     crf: crf,
+    preset: preset,
     output: output,
     upscale: upscaleVal !== "none" ? upscaleVal : null,
   };
@@ -177,9 +191,18 @@ function updateUI(s) {
       statusEl.textContent = "⏳ Finalizing...";
       btnStart.disabled = true;
       break;
-    case "done":
-      statusEl.textContent = `✅ Done: ${s.frames} frames\n${s.output}`;
+    case "done": {
+      let line = `✅ Done: ${s.frames} frames`;
+      if (s.actualFps && s.targetFps) {
+        const ratio = s.actualFps / s.targetFps;
+        line += ` · ${s.actualFps.toFixed(1)} fps (${ratio.toFixed(2)}× target)`;
+      }
+      if (s.elapsedMs) {
+        line += ` in ${(s.elapsedMs / 1000).toFixed(2)}s`;
+      }
+      statusEl.textContent = `${line}\n${s.output}`;
       break;
+    }
     case "error":
       statusEl.textContent = `❌ ${s.message}`;
       break;
