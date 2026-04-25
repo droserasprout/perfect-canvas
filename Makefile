@@ -6,6 +6,6 @@ build:
 		--exclude '*.git*' \
 		--exclude '*cache*' \
 		--exclude '*.zip' \
-		--exclude '*.png' \
+		--exclude 'screenshot.png' \
 		--exclude '*.md' \
 		--exclude 'native/*'
