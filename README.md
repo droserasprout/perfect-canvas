@@ -8,7 +8,7 @@ This is a Firefox extension to accurately capture WebGL canvas content. It's des
 
 - Pixel-perfect frame-by-frame capture.
 - Configurable resolution, FPS, quality (CRF), and encoder speed (preset).
-- Codec choice: libx264 (CPU, default) or h264_vaapi (GPU, AMD/Intel).
+- Codec choice: libx264 (CPU, default), h264_vaapi (GPU, AMD/Intel) or h264_nvenc (GPU, Nvidia).
 - Automatic canvas resize to match capture resolution (restored after).
 - Hydra, Cables.gl, and Strudel support: patches `requestAnimationFrame` / `performance.now` so output is frame-perfect regardless of real render speed.
 - Optional per-frame timing dump to `~/.cache/perfect-canvas/profile-<ts>.log` for profiling (with mean/stddev/min/p50/p95/max summary).
@@ -43,16 +43,18 @@ sh ./install.sh
 
 ## Performance
 
-Test settings: 1080x1920, 5s, 30fps, q:high, s:ultrafast, /tmp write
-Setup #1: Ryzen 7 4800HS, CachyOS Linux
+Test settings: 1080x1920, 10s, 60fps, CRF=18, preset=ultrafast, /tmp write
 
 | setup | project | real FPS |
 | - | - | - |
-| #1, Firefox 140 | Strudel+Hydra, fat project | 25-26 |
-| #1, Firefox 140 | [Hydra](https://hydra.ojack.xyz/?code=JTJGJTJGJTIwbGljZW5zZWQlMjB3aXRoJTIwQ0MlMjBCWS1OQy1TQSUyMDQuMCUyMGh0dHBzJTNBJTJGJTJGY3JlYXRpdmVjb21tb25zLm9yZyUyRmxpY2Vuc2VzJTJGYnktbmMtc2ElMkY0LjAlMkYlMEElMkYlMkYlMjBieSUyME9saXZpYSUyMEphY2slMEFvc2MoMjAlMkMlMjAwLjAzJTJDJTIwMS43KSUwQSUwOS5rYWxlaWQoKSUwQSUwOS5tdWx0KG9zYygyMCUyQyUyMDAuMDAxJTJDJTIwMCklMEElMDklMDkucm90YXRlKDEuNTgpKSUwQSUwOS5ibGVuZChvMCUyQyUyMDAuOTQpJTBBJTA5Lm1vZHVsYXRlU2NhbGUob3NjKDEwJTJDJTIwMC43OTMpJTJDJTIwLTAuMDMpJTBBJTA5LnNjYWxlKDAuOCUyQyUyMCgpJTIwJTNEJTNFJTIwMS4wNSUyMCUyQiUyMDAuMDYzJTIwKiUyME1hdGguc2luKDAuMDUlMjAqJTIwdGltZSkpJTBBJTA5Lm91dChvMCklM0I%3D), basic example | 30-41 |
-| #1, Firefox 140 | [cables.gl](https://cables.gl/edit/mwt7bf) | 17-32 |
-| #1, Hellfire 142 | [cables.gl](https://cables.gl/edit/mwt7bf) | 20-40 |
-| #1, Nightly 142 | [cables.gl](https://cables.gl/edit/mwt7bf) | 21-44 |
+| Ryzen 7 4800HS, Firefox 140 | Strudel+Hydra, fat project | 33 |
+| Ryzen 7 4800HS, Firefox 140 | [Hydra](https://hydra.ojack.xyz/?code=JTJGJTJGJTIwbGljZW5zZWQlMjB3aXRoJTIwQ0MlMjBCWS1OQy1TQSUyMDQuMCUyMGh0dHBzJTNBJTJGJTJGY3JlYXRpdmVjb21tb25zLm9yZyUyRmxpY2Vuc2VzJTJGYnktbmMtc2ElMkY0LjAlMkYlMEElMkYlMkYlMjBieSUyME9saXZpYSUyMEphY2slMEFvc2MoMjAlMkMlMjAwLjAzJTJDJTIwMS43KSUwQSUwOS5rYWxlaWQoKSUwQSUwOS5tdWx0KG9zYygyMCUyQyUyMDAuMDAxJTJDJTIwMCklMEElMDklMDkucm90YXRlKDEuNTgpKSUwQSUwOS5ibGVuZChvMCUyQyUyMDAuOTQpJTBBJTA5Lm1vZHVsYXRlU2NhbGUob3NjKDEwJTJDJTIwMC43OTMpJTJDJTIwLTAuMDMpJTBBJTA5LnNjYWxlKDAuOCUyQyUyMCgpJTIwJTNEJTNFJTIwMS4wNSUyMCUyQiUyMDAuMDYzJTIwKiUyME1hdGguc2luKDAuMDUlMjAqJTIwdGltZSkpJTBBJTA5Lm91dChvMCklM0I%3D), basic example | 47 |
+| Ryzen 7 4800HS, Firefox 140 | [cables.gl](https://cables.gl/edit/mwt7bf) | 19 |
+| Ryzen 7 4800HS, Hellfire 142 | [cables.gl](https://cables.gl/edit/mwt7bf) |22 |
+| Ryzen 7 4800HS, Nightly 142 | [cables.gl](https://cables.gl/edit/mwt7bf) | 22 |
+| RTX 2060 Max-Q, Nightly 142 | [cables.gl](https://cables.gl/edit/mwt7bf) | 26 |
+| RTX 2060 Max-Q, Nightly 142 | [Hydra](https://hydra.ojack.xyz/?code=JTJGJTJGJTIwbGljZW5zZWQlMjB3aXRoJTIwQ0MlMjBCWS1OQy1TQSUyMDQuMCUyMGh0dHBzJTNBJTJGJTJGY3JlYXRpdmVjb21tb25zLm9yZyUyRmxpY2Vuc2VzJTJGYnktbmMtc2ElMkY0LjAlMkYlMEElMkYlMkYlMjBieSUyME9saXZpYSUyMEphY2slMEFvc2MoMjAlMkMlMjAwLjAzJTJDJTIwMS43KSUwQSUwOS5rYWxlaWQoKSUwQSUwOS5tdWx0KG9zYygyMCUyQyUyMDAuMDAxJTJDJTIwMCklMEElMDklMDkucm90YXRlKDEuNTgpKSUwQSUwOS5ibGVuZChvMCUyQyUyMDAuOTQpJTBBJTA5Lm1vZHVsYXRlU2NhbGUob3NjKDEwJTJDJTIwMC43OTMpJTJDJTIwLTAuMDMpJTBBJTA5LnNjYWxlKDAuOCUyQyUyMCgpJTIwJTNEJTNFJTIwMS4wNSUyMCUyQiUyMDAuMDYzJTIwKiUyME1hdGguc2luKDAuMDUlMjAqJTIwdGltZSkpJTBBJTA5Lm91dChvMCklM0I%3D), basic example | 41 |
+
 
 ## Roadmap
 
