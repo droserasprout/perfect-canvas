@@ -260,6 +260,11 @@ async def handle_ws(websocket, config, done_event):
                         stderr=asyncio.subprocess.PIPE,
                     )
                     log.info("FFmpeg pid=%d", ffmpeg_proc.pid)
+                    # Hide NVENC's ~1.5s per-process cold start: let drain() accept
+                    # ~32 frames of buffered writes instead of blocking at the 64KB
+                    # default. Bounded by MAX_IN_FLIGHT on the JS side.
+                    if ffmpeg_proc.stdin is not None:
+                        ffmpeg_proc.stdin.transport.set_write_buffer_limits(high=256_000_000)
                     stderr_task = asyncio.create_task(drain_stderr(ffmpeg_proc))
                     exit_task = asyncio.create_task(ffmpeg_proc.wait())
 

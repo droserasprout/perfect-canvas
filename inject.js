@@ -16,8 +16,10 @@
 
   // Bounded in-flight pipeline. Producer blocks only when this many frames
   // are unacked; hides per-frame round-trip latency while keeping memory
-  // bounded (N × frame size). At 1080p RGBA, 4 × 8MB = 32MB ceiling.
-  const MAX_IN_FLIGHT = 4;
+  // bounded (N × frame size). At 1080p RGBA, 32 × 8MB = 256MB ceiling.
+  // Sized to absorb NVENC's ~1.5s first-session init without stalling the
+  // producer (32 frames ≈ 1.3s of JS-side capture at 24 FPS).
+  const MAX_IN_FLIGHT = 32;
   const pending = [];
 
   let profileEnabled = false;
@@ -75,12 +77,10 @@
       return false;
     }
 
-    // Cables multiplies by devicePixelRatio internally,
-    // so we must divide to get the exact drawing buffer size we want
-    const dpr = window.devicePixelRatio || 1;
-    const cssW = Math.round(width / dpr);
-    const cssH = Math.round(height / dpr);
-    console.log(`[PC] Cables dialog: requesting ${cssW}×${cssH} CSS (DPR ${dpr}) → target ${width}×${height} buffer`);
+    // Cables takes the dialog value as the literal drawing-buffer size.
+    // Don't divide by devicePixelRatio — capture dims are already in device
+    // pixels and the encoded video should match exactly.
+    console.log(`[PC] Cables dialog: requesting ${width}×${height} buffer`);
 
     // 1. Open the dialog
     CABLES.CMD.RENDERER.changeSize();
@@ -102,7 +102,7 @@
     }
 
     // 3. Set value and trigger input event
-    input.value = `${cssW} x ${cssH}`;
+    input.value = `${width} x ${height}`;
     input.dispatchEvent(new Event("input", { bubbles: true }));
     input.dispatchEvent(new Event("change", { bubbles: true }));
 
@@ -194,6 +194,27 @@
     return { data: new Uint8Array(imageData.data.buffer), webgl: false, actualWidth: width, actualHeight: height };
   }
 
+  // WebGL2 async readback: queue readPixels into a PBO, return a fence.
+  // Caller waits on the fence one frame later then getBufferSubData picks
+  // up the result. The DMA runs in parallel with the next frame's JS.
+  function issuePixelRead(gl, pbo, w, h) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pbo);
+    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, 0);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    return gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+  }
+
+  function waitPBOData(gl, pbo, fence, w, h) {
+    gl.clientWaitSync(fence, gl.SYNC_FLUSH_COMMANDS_BIT, 1_000_000_000);
+    gl.deleteSync(fence);
+    const buf = new Uint8Array(w * h * 4);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pbo);
+    gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, buf);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    return buf;
+  }
+
   async function sendFrame(buf, frameNo) {
     // Block until the pipeline has a free slot (FIFO on oldest pending ACK)
     while (capturing && pending.length >= MAX_IN_FLIGHT) {
@@ -245,6 +266,23 @@
     encH = encH - (encH % 2);
     console.log(`[PC] Encoding at: ${encW}×${encH} (even-aligned)`);
 
+    const isWebGL2 = !!(gl && typeof gl.fenceSync === "function");
+    let pboA = null, pboB = null, pboCur = null, fenceCur = null;
+    if (isWebGL2) {
+      pboA = gl.createBuffer();
+      pboB = gl.createBuffer();
+      const size = encW * encH * 4;
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pboA);
+      gl.bufferData(gl.PIXEL_PACK_BUFFER, size, gl.STREAM_READ);
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pboB);
+      gl.bufferData(gl.PIXEL_PACK_BUFFER, size, gl.STREAM_READ);
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+      console.log("[PC] WebGL2 async PBO readback enabled");
+      // Pre-loop: issue first read (scene 0). Emitted in iter 1 below.
+      pboCur = pboA;
+      fenceCur = issuePixelRead(gl, pboCur, encW, encH);
+    }
+
     window.postMessage({
       type: "__pc_meta",
       meta: {
@@ -260,66 +298,139 @@
 
     captureStartTs = origPerfNow();
 
-    // Emit frame 1 (initial scene) before the main loop so the page's
-    // queued RAF callbacks don't advance scene-time past t=0.
-    const tFirstBeforeRead = profileEnabled ? origPerfNow() : 0;
-    const firstRead = readPixels(canvas, gl, encW, encH);
-    const tFirstAfterRead = profileEnabled ? origPerfNow() : 0;
-    const firstPendingPre = pending.length;
-    await sendFrame(firstRead.data.buffer, 1);
-    const tFirstAfterSend = profileEnabled ? origPerfNow() : 0;
-    frameCount = 1;
-    if (profileEnabled) {
-      profileRows.push({
-        frame: 1,
-        raf_ms: 0,
-        cb_ms: 0,
-        gpu_ms: tFirstAfterRead - tFirstBeforeRead,
-        send_ms: tFirstAfterSend - tFirstAfterRead,
-        pending: firstPendingPre,
-      });
-    }
-    reportProgress();
+    if (isWebGL2) {
+      // Async PBO pipeline: each iter renders frame K+1, issues its readback,
+      // then waits on the prior fence (frame K) and emits. One frame of
+      // latency in exchange for hiding GPU→CPU DMA behind the next render.
+      // Pace on setTimeout(0), not origRAF — we're reading pixels, not
+      // presenting; vsync clamping would just lose us slot time.
+      while (capturing && frameCount < totalFrames - 1) {
+        const tIterStart = profileEnabled ? origPerfNow() : 0;
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        if (!capturing) break;
+        const tAfterRaf = profileEnabled ? origPerfNow() : 0;
 
-    // We're reading pixels, not presenting. Pace on setTimeout(0) instead of
-    // origRAF so one ~14ms GPU readback doesn't push us past the next vsync
-    // and cost us the rest of a 16.7ms slot.
-    while (capturing && frameCount < totalFrames) {
-      const tIterStart = profileEnabled ? origPerfNow() : 0;
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      if (!capturing) break;
-      const tAfterRaf = profileEnabled ? origPerfNow() : 0;
-
-      fakeTime += frameDuration;
-      if (frameCallbacks.length) {
-        const callbacks = frameCallbacks.splice(0);
-        for (const { cb } of callbacks) {
-          try { cb(fakeTime); } catch (e) { console.error("[PC] callback error:", e); }
+        fakeTime += frameDuration;
+        if (frameCallbacks.length) {
+          const callbacks = frameCallbacks.splice(0);
+          for (const { cb } of callbacks) {
+            try { cb(fakeTime); } catch (e) { console.error("[PC] callback error:", e); }
+          }
         }
+        if (!capturing) break;
+        const tAfterCb = profileEnabled ? origPerfNow() : 0;
+
+        const pboNext = pboCur === pboA ? pboB : pboA;
+        const fenceNext = issuePixelRead(gl, pboNext, encW, encH);
+
+        const data = waitPBOData(gl, pboCur, fenceCur, encW, encH);
+        const tAfterGpu = profileEnabled ? origPerfNow() : 0;
+        const pendingPre = pending.length;
+        const frameNo = frameCount + 1;
+        await sendFrame(data.buffer, frameNo);
+        const tAfterSend = profileEnabled ? origPerfNow() : 0;
+        frameCount++;
+
+        if (profileEnabled) {
+          profileRows.push({
+            frame: frameNo,
+            raf_ms: tAfterRaf - tIterStart,
+            cb_ms: tAfterCb - tAfterRaf,
+            gpu_ms: tAfterGpu - tAfterCb,
+            send_ms: tAfterSend - tAfterGpu,
+            pending: pendingPre,
+          });
+        }
+
+        pboCur = pboNext;
+        fenceCur = fenceNext;
+
+        if (frameCount % 10 === 0) reportProgress();
       }
-      if (!capturing) break;
-      const tAfterCb = profileEnabled ? origPerfNow() : 0;
 
-      const { data } = readPixels(canvas, gl, encW, encH);
-      const tAfterGpu = profileEnabled ? origPerfNow() : 0;
-      const pendingPre = pending.length;
-      const frameNo = frameCount + 1;
-      await sendFrame(data.buffer, frameNo);
-      const tAfterSend = profileEnabled ? origPerfNow() : 0;
-      frameCount++;
+      // Drain the last in-flight readback.
+      if (capturing && frameCount < totalFrames && fenceCur) {
+        const tAfterCb = profileEnabled ? origPerfNow() : 0;
+        const data = waitPBOData(gl, pboCur, fenceCur, encW, encH);
+        const tAfterGpu = profileEnabled ? origPerfNow() : 0;
+        const pendingPre = pending.length;
+        const frameNo = frameCount + 1;
+        await sendFrame(data.buffer, frameNo);
+        const tAfterSend = profileEnabled ? origPerfNow() : 0;
+        frameCount++;
+        if (profileEnabled) {
+          profileRows.push({
+            frame: frameNo,
+            raf_ms: 0, cb_ms: 0,
+            gpu_ms: tAfterGpu - tAfterCb,
+            send_ms: tAfterSend - tAfterGpu,
+            pending: pendingPre,
+          });
+        }
+        reportProgress();
+      } else if (fenceCur) {
+        gl.deleteSync(fenceCur);
+      }
 
+      gl.deleteBuffer(pboA);
+      gl.deleteBuffer(pboB);
+    } else {
+      // Sync fallback: WebGL1 or Canvas2D.
+      const tFirstBeforeRead = profileEnabled ? origPerfNow() : 0;
+      const firstRead = readPixels(canvas, gl, encW, encH);
+      const tFirstAfterRead = profileEnabled ? origPerfNow() : 0;
+      const firstPendingPre = pending.length;
+      await sendFrame(firstRead.data.buffer, 1);
+      const tFirstAfterSend = profileEnabled ? origPerfNow() : 0;
+      frameCount = 1;
       if (profileEnabled) {
         profileRows.push({
-          frame: frameNo,
-          raf_ms: tAfterRaf - tIterStart,
-          cb_ms: tAfterCb - tAfterRaf,
-          gpu_ms: tAfterGpu - tAfterCb,
-          send_ms: tAfterSend - tAfterGpu,
-          pending: pendingPre,
+          frame: 1,
+          raf_ms: 0, cb_ms: 0,
+          gpu_ms: tFirstAfterRead - tFirstBeforeRead,
+          send_ms: tFirstAfterSend - tFirstAfterRead,
+          pending: firstPendingPre,
         });
       }
+      reportProgress();
 
-      if (frameCount % 10 === 0) reportProgress();
+      while (capturing && frameCount < totalFrames) {
+        const tIterStart = profileEnabled ? origPerfNow() : 0;
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        if (!capturing) break;
+        const tAfterRaf = profileEnabled ? origPerfNow() : 0;
+
+        fakeTime += frameDuration;
+        if (frameCallbacks.length) {
+          const callbacks = frameCallbacks.splice(0);
+          for (const { cb } of callbacks) {
+            try { cb(fakeTime); } catch (e) { console.error("[PC] callback error:", e); }
+          }
+        }
+        if (!capturing) break;
+        const tAfterCb = profileEnabled ? origPerfNow() : 0;
+
+        const { data } = readPixels(canvas, gl, encW, encH);
+        const tAfterGpu = profileEnabled ? origPerfNow() : 0;
+        const pendingPre = pending.length;
+        const frameNo = frameCount + 1;
+        await sendFrame(data.buffer, frameNo);
+        const tAfterSend = profileEnabled ? origPerfNow() : 0;
+        frameCount++;
+
+        if (profileEnabled) {
+          profileRows.push({
+            frame: frameNo,
+            raf_ms: tAfterRaf - tIterStart,
+            cb_ms: tAfterCb - tAfterRaf,
+            gpu_ms: tAfterGpu - tAfterCb,
+            send_ms: tAfterSend - tAfterGpu,
+            pending: pendingPre,
+          });
+        }
+
+        if (frameCount % 10 === 0) reportProgress();
+      }
     }
 
     stopCapture();
